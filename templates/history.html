@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Health History</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+</head>
+
+<body>
+
+<h1>Health History</h1>
+
+{% for item in records %}
+
+<pre>
+=== Medicine Suggestion ===
+
+Patient Name: {{ item.user }}
+
+Symptoms: {{ item.symptom }}
+
+Suggestion: {{ item.suggestion }}
+
+Primary Medicine: {{ item.medicine }}
+
+Date & Time: {{ item.time }}
+
+----------------------------------
+</pre>
+
+{% endfor %}
+
+<a href="/dashboard">
+    <button>Back</button>
+</a>
+
+</body>
+</html>

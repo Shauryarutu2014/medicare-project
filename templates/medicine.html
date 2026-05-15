@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>Medicine Suggestion</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+
+
+<h1>Medicine Suggestion</h1>
+
+<form method="POST">
+
+    <label>Enter Problem:</label>
+
+    <br><br>
+
+    <textarea
+        name="problem"
+        rows="5"
+        cols="40"
+        placeholder="Example: fever, cold, headache"></textarea>
+
+    <br><br>
+
+    <button type="submit">
+        Generate Suggestion
+    </button>
+
+</form>
+
+<br><br>
+
+<h2>Symptoms:</h2>
+<p>{{ symptoms }}</p>
+
+<h2>Suggestion:</h2>
+<p>{{ suggestion }}</p>
+
+<br>
+
+<a href="/dashboard">
+    <button>Back</button>
+</a>
+
+</body>
+</html>

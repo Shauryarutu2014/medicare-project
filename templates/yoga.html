@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Yoga Info</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <style>
+
+        body{
+            font-family: Arial;
+            background-color: white;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+        }
+
+
+        h1{
+            color: darkgreen;
+            margin-top: 20px;
+        }
+
+        .yoga-container{
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .card{
+            width: 280px;
+            background: #f5f5f5;
+            border-radius: 15px;
+            padding: 15px;
+            box-shadow: 0px 0px 10px lightgray;
+        }
+
+        .card img{
+            width: 100%;
+            height: 220px;
+            object-fit: cover;
+            border-radius: 10px;
+        }
+
+        .card h3{
+            margin-top: 10px;
+            color: darkgreen;
+        }
+
+        .card p{
+            font-size: 14px;
+        }
+
+        button{
+            background-color: lightgreen;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-bottom: 30px;
+        }
+
+        button:hover{
+            background-color: green;
+            color: white;
+        }
+
+
+
+    </style>
+
+</head>
+
+<body>
+
+<h1>Yoga Asanas</h1>
+
+<div class="yoga-container">
+
+    <!-- Yoga 1 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga1.jpg') }}">
+
+    <h3>1. Mountain Pose (Tadasana)</h3>
+
+    <p>
+        Improves posture, balance, and grounding.
+    </p>
+
+</div>
+
+<!-- Yoga 2 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga2.jpg') }}">
+
+    <h3>2. Chair Pose (Utkatasana)</h3>
+
+    <p>
+        Strengthens legs and spine, tones core.
+    </p>
+
+</div>
+
+<!-- Yoga 3 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga3.jpg') }}">
+
+    <h3>3. Warrior I (Virabhadrasana I)</h3>
+
+    <p>
+        Strength, improves flexibility, and boosts full-body stability.
+    </p>
+
+</div>
+
+<!-- Yoga 4 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga4.jpg') }}">
+
+    <h3>4. Warrior II (Virabhadrasana II)</h3>
+
+    <p>
+        Building lower-body strength, opening the hips, and cultivating mental focus.
+    </p>
+
+</div>
+
+<!-- Yoga 5 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga5.jpg') }}">
+
+    <h3>5. Warrior III (Virabhadrasana III)</h3>
+
+    <p>
+        Unique ability to simultaneously engage the core, sculpt the legs (especially the hamstrings and glutes), and sharpen mental focus through intense balance and postural control.
+    </p>
+
+</div>
+
+<!-- Yoga 6 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga6.jpg') }}">
+
+    <h3>6. Reverse Warrior (Viparita Virabhadrasana)</h3>
+
+    <p>
+        Stretching the intercostal muscles, building lower-body strength, and promoting a sense of calm, upward expansion.
+    </p>
+
+</div>
+
+<!-- Yoga 7 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga7.jpg') }}">
+
+    <h3>7. Extended Side Angle (Utthita Parsvakonasana)</h3>
+
+    <p>
+        Stretching the entire side body while building lower-body strength.
+    </p>
+
+</div>
+
+<!-- Yoga 8 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga8.jpg') }}">
+
+    <h3>8. Triangle Pose (Trikonasana)</h3>
+
+    <p>
+        Lateral stretch, which deeply opens the hips, elongates the spine, and builds core balance while harmonizing physical effort and mental focus.
+    </p>
+
+</div>
+
+<!-- Yoga 9 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga9.jpg') }}">
+
+    <h3>9. Extended Triangle Pose (Utthita Trikonasana)</h3>
+
+    <p>
+        Ability to simultaneously stretch, strengthen, and align the body while cultivating deep balance, mental focus, and cardiovascular opening.
+    </p>
+
+</div>
+
+<!-- Yoga 10 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga10.jpg') }}">
+
+    <h3>10. Half Moon Pose (Ardha Chandrasana)</h3>
+
+    <p>
+        A balancing, asymmetrical standing yoga asana that merges strength, flexibility, and focus.
+    </p>
+
+</div>
+
+<!-- Yoga 11 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga11.jpg') }}">
+
+    <h3>11. Pyramid Pose (Parsvottanasana)</h3>
+
+    <p>
+        Combining a deep hamstring stretch with rigorous hip-squaring and core stability.
+    </p>
+
+</div>
+
+<!-- Yoga 12 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga12.jpg') }}">
+
+    <h3>12. Standing Forward Bend (Uttanasana)</h3>
+
+    <p>
+        Providing a deep stretch to the hamstrings and calves, relieving spinal tension, and calming the central nervous system through increased blood flow to the head.
+    </p>
+
+</div>
+
+<!-- Yoga 13 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga13.jpg') }}">
+
+    <h3>13. Standing Split (Urdhva Prasarita Eka Padasana)</h3>
+
+    <p>
+       Ability to simultaneously build core strength, vastly improve hip and hamstring flexibility, and heighten mental focus and body control.
+    </p>
+
+</div>
+
+<!-- Yoga 14 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga14.jpg') }}">
+
+    <h3>14. Wide-Legged Forward Bend (Prasarita Padottanasana)</h3>
+
+    <p>
+        A versatile yoga pose that blends deep hamstring and inner-thigh stretching with the calming, restorative benefits of a mild inversion.
+    </p>
+
+</div>
+
+<!-- Yoga 15 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga15.jpg') }}">
+
+    <h3>15. Garland Pose (Malasana)</h3>
+
+    <p>
+        Pelvic floor stabilization, hip opening, and digestive health.
+    </p>
+
+</div>
+
+<!-- Yoga 16 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga16.jpg') }}">
+
+    <h3>16. Eagle Pose (Garudasana)</h3>
+
+    <p>
+        Ability to intertwine the four limbs, creating intense joint compression that boosts circulation, releases deep-seated tension in the upper back, and improves your overall proprioception.
+    </p>
+
+</div>
+
+<!-- Yoga 17 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga17.jpg') }}">
+
+    <h3>17. Dancer’s Pose (Natarajasana)</h3>
+
+    <p>
+        An elegant, intermediate standing backbend that blends strength, flexibility, and intense focus.
+    </p>
+
+</div>
+
+<!-- Yoga 18 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga18.jpg') }}">
+
+    <h3>18. Standing Hand to Big Toe Pose (Utthita Hasta Padangusthasana)</h3>
+
+    <p>
+        An advanced balancing posture that builds intense lower-body strength while deeply stretching the hamstrings and calves.
+    </p>
+
+</div>
+
+<!-- Yoga 19 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga19.jpg') }}">
+
+    <h3>19. Chair Twist (Parivrtta Utkatasana)</h3>
+
+    <p>
+       A dynamic, heat-building yoga posture that combines intense lower-body strengthening with deep spinal rotation.
+    </p>
+
+</div>
+
+<!-- Yoga 20 -->
+<div class="card">
+
+    <img src="{{ url_for('static', filename='images/Yoga20.jpg') }}">
+
+    <h3>20. Easy Pose (Sukhasana)</h3>
+
+    <p>
+         It creates an optimal, stable foundation for breathwork (Pranayama) and mindfulness.
+    </p>
+
+</div>
+
+</div>   <!-- CLOSE yoga-container HERE -->
+
+<a href="/dashboard">
+    <button>Back To Dashboard</button>
+</a>
+
+</body>
+</html>

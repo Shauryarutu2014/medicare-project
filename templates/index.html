@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>Medicare</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet"
+    href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>Welcome To Medicare</h1>
+
+
+
+    <a href="/signup">
+        <button>Create Medicare ID</button>
+    </a>
+
+    <a href="/signin">
+        <button>Sign In</button>
+    </a>
+
+     <img src="{{ url_for('static', filename='images/logo.png') }}"
+         class="main-logo">
+
+</div>
+
+</div>
+
+</body>
+</html>

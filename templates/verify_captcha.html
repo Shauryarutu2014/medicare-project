@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>CAPTCHA Verification</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>Security Verification</h1>
+
+    <h2>{{ captcha }}</h2>
+
+    <form method="POST">
+
+        <input type="text"
+               name="captcha"
+               placeholder="Enter CAPTCHA"
+               required>
+
+        <button type="submit">
+            Verify
+        </button>
+
+    </form>
+
+</div>
+
+</body>
+</html>

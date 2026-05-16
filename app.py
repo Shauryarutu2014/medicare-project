@@ -2,25 +2,14 @@ from flask import Flask, render_template, request, redirect, session
 import json
 import os
 from datetime import datetime
-from flask_mail import Mail, Message
 import random
+import string
+
+from werkzeug.security import generate_password_hash
+from werkzeug.security import check_password_hash
 
 app = Flask(__name__)
 app.secret_key = "medicare_secret"
-
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-app.config['MAIL_PORT'] = 465
-
-app.config['MAIL_USE_TLS'] = False
-app.config['MAIL_USE_SSL'] = True
-
-app.config['MAIL_USERNAME'] = os.environ.get("EMAIL_USER")
-app.config['MAIL_PASSWORD'] = os.environ.get("EMAIL_PASS")
-
-app.config['MAIL_USERNAME'] = "medicareweb2026@gmail.com"
-app.config['MAIL_PASSWORD'] = "xpis ackf rmzy svgv"
-
-mail = Mail(app)
 
 USER_FILE = "users.json"
 
@@ -65,6 +54,10 @@ def signup():
 
     if request.method == "POST":
 
+        fullname = request.form["fullname"]
+        dob = request.form["dob"]
+        email = request.form["email"]
+
         username = request.form["username"]
         password = request.form["password"]
 
@@ -73,13 +66,24 @@ def signup():
         if username in users:
             return "Username already exists"
 
-        users[username] = {
-            "password": password
+        # SAVE TEMP USER
+        session["temp_user"] = {
+            "fullname": fullname,
+            "dob": dob,
+            "email": email,
+            "username": username,
+
+            "password": generate_password_hash(password)
         }
 
-        save_users(users)
+        # GENERATE HARD CAPTCHA
+        characters = string.ascii_letters + string.digits + "@#$%&*"
 
-        return redirect("/signin")
+        captcha = ''.join(random.choice(characters) for i in range(8))
+
+        session["captcha"] = captcha
+
+        return redirect("/verify_captcha")
 
     return render_template("signup.html")
 
@@ -94,13 +98,21 @@ def signin():
 
         users = load_users()
 
-        if username in users and users[username]["password"] == password:
+        if username in users:
 
-            session["user"] = username
+            saved_password = users[username]["password"]
 
-            return redirect("/dashboard")
+            if check_password_hash(saved_password, password):
 
-        return "Invalid Login"
+                session["user"] = username
+
+                return redirect("/dashboard")
+
+            else:
+                return "Wrong Password"
+
+        else:
+            return "User Not Found"
 
     return render_template("signin.html")
 
@@ -640,74 +652,35 @@ def history():
         records=records
     )
 
-#------------------------- Gmail --------------------------------
-@app.route("/send_otp", methods=["POST"])
-def send_otp():
-
-    fullname = request.form["fullname"]
-    dob = request.form["dob"]
-
-    username = request.form["username"]
-    email = request.form["email"]
-    password = request.form["password"]
-
-    # PASSWORD VALIDATION
-    if len(password) < 8:
-        return "Password must contain maximum 8 characters"
-
-    otp = str(random.randint(100000, 999999))
-
-    # SAVE TEMP DATA
-    session["otp"] = otp
-
-    session["temp_fullname"] = fullname
-    session["temp_dob"] = dob
-
-    session["temp_username"] = username
-    session["temp_email"] = email
-    session["temp_password"] = password
-
-    # SEND EMAIL
-    msg = Message(
-        "Medicare OTP Verification",
-        sender=app.config['MAIL_USERNAME'],
-        recipients=[email]
-    )
-
-
-
-    msg.body = f"Your Medicare OTP is: {otp}"
-
-    mail.send(msg)
-
-    return render_template("verify_otp.html")
-
 # -------------------------- Verify OTP -------------------
-@app.route("/verify_otp", methods=["POST"])
-def verify_otp():
+@app.route("/verify_captcha", methods=["GET", "POST"])
+def verify_captcha():
 
-    user_otp = request.form["otp"]
+    if request.method == "POST":
 
-    if user_otp == session["otp"]:
+        entered_captcha = request.form["captcha"]
 
-        users = load_users()
+        if entered_captcha == session["captcha"]:
 
-        username = session["temp_username"]
+            users = load_users()
 
-        users[username] = {
+            temp = session["temp_user"]
 
-            "fullname": session["temp_fullname"],
-            "dob": session["temp_dob"],
-            "email": session["temp_email"],
-            "password": session["temp_password"]
+            users[temp["username"]] = temp
 
-        }
+            save_users(users)
 
-        save_users(users)
+            session["user"] = temp["username"]
 
-        return redirect("/signin")
+            return redirect("/dashboard")
 
-    return "Invalid OTP"
+        else:
+            return "Wrong CAPTCHA"
+
+    return render_template(
+        "verify_captcha.html",
+        captcha=session["captcha"]
+    )
 
 # ---------------- LOGOUT ----------------
 @app.route("/logout")

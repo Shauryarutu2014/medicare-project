@@ -1,9 +1,12 @@
 from flask import Flask, render_template, request, redirect, session
 import json
-import os
 from datetime import datetime
 import random
 import string
+import csv
+import os
+import datetime
+from flask import send_file
 
 from werkzeug.security import generate_password_hash
 from werkzeug.security import check_password_hash
@@ -12,6 +15,43 @@ app = Flask(__name__)
 app.secret_key = "medicare_secret"
 
 USER_FILE = "users.json"
+
+#----------------- Download CSV File --------------------
+@app.route("/download_users")
+def download_users():
+
+    return send_file(
+
+        "users.csv",
+
+        as_attachment=True
+    )
+
+#------------------------ Download History CSV -------------------
+@app.route("/download_history")
+def download_history():
+
+    return send_file(
+
+        "health_history.csv",
+
+        as_attachment=True
+    )
+
+#-------------------- Saving Data Using CSV -----------------
+if not os.path.exists("users.csv"):
+
+    with open("users.csv", "w", newline="") as file:
+
+        writer = csv.writer(file)
+
+        writer.writerow([
+            "Full Name",
+            "DOB",
+            "Email",
+            "Username",
+            "Password"
+        ])
 
 # ---------------- LOAD USERS ----------------
 def load_users():
@@ -68,24 +108,80 @@ def signup():
 
         # SAVE TEMP USER
         session["temp_user"] = {
+
             "fullname": fullname,
             "dob": dob,
             "email": email,
+
             "username": username,
 
             "password": generate_password_hash(password)
         }
 
         # GENERATE HARD CAPTCHA
-        characters = string.ascii_letters + string.digits + "@#$%&*"
+        characters = (
+            string.ascii_letters +
+            string.digits +
+            "@#$%&*"
+        )
 
-        captcha = ''.join(random.choice(characters) for i in range(8))
+        captcha = ''.join(
+            random.choice(characters)
+            for i in range(8)
+        )
 
         session["captcha"] = captcha
 
         return redirect("/verify_captcha")
 
     return render_template("signup.html")
+
+
+# ---------------- CAPTCHA VERIFY ----------------
+@app.route("/verify_captcha", methods=["GET", "POST"])
+def verify_captcha():
+
+    if request.method == "POST":
+
+        entered_captcha = request.form["captcha"]
+
+        if entered_captcha == session["captcha"]:
+
+            temp = session["temp_user"]
+
+            # SAVE USER IN CSV
+            with open(
+                "users.csv",
+                "a",
+                newline=""
+            ) as file:
+
+                writer = csv.writer(file)
+
+                writer.writerow([
+
+                    temp["fullname"],
+                    temp["dob"],
+                    temp["email"],
+
+                    temp["username"],
+
+                    temp["password"]
+                ])
+
+            session["user"] = temp["username"]
+
+            return redirect("/dashboard")
+
+        else:
+            return "Wrong CAPTCHA"
+
+    return render_template(
+
+        "verify_captcha.html",
+
+        captcha=session["captcha"]
+    )
 
 # ---------------- SIGNIN ----------------
 @app.route("/signin", methods=["GET", "POST"])
@@ -587,45 +683,44 @@ def medicine():
 
                 suggestion = ", ".join(item["suggestions"])
 
-                # CURRENT DATE AND TIME
+                # CURRENT DATE
                 current_date = datetime.now().strftime("%d-%m-%Y")
 
+                # CURRENT TIME
                 current_time = datetime.now().strftime("%I:%M %p")
 
-                # DATA TO SAVE
-                data = {
-                    "username": session["user"],
-                    "date": current_date,
-                    "time": current_time,
-                    "problem": problem,
-                    "symptoms": detected_symptoms,
-                    "suggestion": suggestion
-                }
+                # SAVE HISTORY IN CSV
+                with open(
+                    "health_history.csv",
+                    "a",
+                    newline=""
+                ) as file:
 
-                # OPEN OLD DATA
-                if os.path.exists("medicine_data.json"):
+                    writer = csv.writer(file)
 
-                    with open("medicine_data.json", "r") as f:
-                        all_data = json.load(f)
+                    writer.writerow([
 
-                else:
-                    all_data = []
+                        session["user"],
 
-                # ADD NEW DATA
-                all_data.append(data)
+                        current_date + " " + current_time,
 
-                # SAVE FILE
-                with open("medicine_data.json", "w") as f:
-                    json.dump(all_data, f, indent=4)
+                        problem,
+
+                        detected_symptoms,
+
+                        suggestion
+                    ])
 
                 break
 
     return render_template(
+
         "medicine.html",
+
         suggestion=suggestion,
+
         symptoms=detected_symptoms
     )
-
 # ---------------- HISTORY ----------------
 @app.route("/history")
 def history():
@@ -637,20 +732,38 @@ def history():
 
     records = []
 
-    if os.path.exists("medicine_data.json"):
+    if not os.path.exists("health_history.csv"):
 
-        with open("medicine_data.json", "r") as f:
-            all_data = json.load(f)
+        with open("health_history.csv", "w", newline="") as file:
 
-        for item in all_data:
+            writer = csv.writer(file)
 
-            if item["user"] == username:
-                records.append(item)
+            writer.writerow([
+                "Username",
+                "Date & Time",
+                "Problem",
+                "Symptoms",
+                "Suggestions"
+            ])
+
+    # LOAD HISTORY
+    with open("health_history.csv", "r") as file:
+
+        reader = csv.reader(file)
+
+        next(reader)
+
+        for row in reader:
+
+            if row[0] == username:
+
+                records.append(row)
 
     return render_template(
         "history.html",
         records=records
     )
+
 
 # -------------------------- Verify OTP -------------------
 @app.route("/verify_captcha", methods=["GET", "POST"])

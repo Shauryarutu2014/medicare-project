@@ -682,11 +682,11 @@ def medicine():
 
                 suggestion = ", ".join(item["suggestions"])
 
-                # CURRENT DATE
-                current_date = datetime.now().strftime("%d-%m-%Y")
+                # CURRENT DATE AND TIME
 
-                # CURRENT TIME
-                current_time = datetime.now().strftime("%I:%M %p")
+                current_datetime = datetime.now().strftime(
+                    "%d-%m-%Y %I:%M:%S %p"
+                )
 
                 # SAVE HISTORY IN CSV
                 with open(
@@ -701,7 +701,7 @@ def medicine():
 
                         session["user"],
 
-                        current_date + " " + current_time,
+                        current_datetime,
 
                         problem,
 

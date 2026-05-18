@@ -5,53 +5,60 @@
 
     <title>Health History</title>
 
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
 </head>
 
 <body>
 
-    <h1>Health History</h1>
+    <div class="container">
 
-    <button onclick="window.location.href='/dashboard'">
-        Back
-    </button>
+        <h1 class="title">
+            Health History
+        </h1>
 
-    <br><br>
+        <a href="/dashboard">
 
-    <table border="1" cellpadding="10">
+            <button class="back-btn">
+                Back
+            </button>
 
-        <tr>
+        </a>
 
-            <th>Username</th>
+        <table class="history-table">
 
-            <th>Date & Time</th>
+            <tr>
 
-            <th>Problem</th>
+                <th>Date & Time</th>
 
-            <th>Symptoms</th>
+                <th>Problem</th>
 
-            <th>Suggestions</th>
+                <th>Symptoms</th>
 
-        </tr>
+                <th>Suggestions</th>
 
-        {% for row in records %}
+            </tr>
 
-        <tr>
+            {% for row in records %}
 
-            <td>{{ row[0] }}</td>
+            <tr>
 
-            <td>{{ row[1] }}</td>
+                <td>{{ row[1] }}</td>
 
-            <td>{{ row[2] }}</td>
+                <td>{{ row[2] }}</td>
 
-            <td>{{ row[3] }}</td>
+                <td>{{ row[3] }}</td>
 
-            <td>{{ row[4] }}</td>
+                <td>{{ row[4] }}</td>
 
-        </tr>
+            </tr>
 
-        {% endfor %}
+            {% endfor %}
 
-    </table>
+        </table>
+
+    </div>
 
 </body>
 

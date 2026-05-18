@@ -13,7 +13,6 @@ from werkzeug.security import check_password_hash
 app = Flask(__name__)
 app.secret_key = "medicare_secret"
 
-USER_FILE = "users.json"
 
 #----------------- Download CSV File --------------------
 @app.route("/download_users")
@@ -52,18 +51,6 @@ if not os.path.exists("users.csv"):
             "Password"
         ])
 
-# ---------------- LOAD USERS ----------------
-def load_users():
-    if os.path.exists(USER_FILE):
-        with open(USER_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-# ---------------- SAVE USERS ----------------
-def save_users(users):
-    with open(USER_FILE, "w") as f:
-        json.dump(users, f, indent=4)
-
 # ---------------- HOME ----------------
 @app.route("/")
 def home():
@@ -87,54 +74,45 @@ def mobile_user():
 
     return render_template("auth.html")
 
-# ---------------- SIGNUP ----------------
-@app.route("/signup", methods=["GET", "POST"])
-def signup():
+# ---------------- SIGNIN ----------------
+@app.route("/signin", methods=["GET", "POST"])
+def signin():
 
     if request.method == "POST":
 
-        fullname = request.form["fullname"]
-        dob = request.form["dob"]
-        email = request.form["email"]
-
         username = request.form["username"]
+
         password = request.form["password"]
 
-        users = load_users()
+        with open("user.csv", "r") as file:
 
-        if username in users:
-            return "Username already exists"
+            reader = csv.reader(file)
 
-        # SAVE TEMP USER
-        session["temp_user"] = {
+            next(reader)
 
-            "fullname": fullname,
-            "dob": dob,
-            "email": email,
+            for row in reader:
 
-            "username": username,
+                saved_username = row[3]
 
-            "password": generate_password_hash(password)
-        }
+                saved_password = row[4]
 
-        # GENERATE HARD CAPTCHA
-        characters = (
-            string.ascii_letters +
-            string.digits +
-            "@#$%&*"
-        )
+                if saved_username == username:
 
-        captcha = ''.join(
-            random.choice(characters)
-            for i in range(8)
-        )
+                    if check_password_hash(
+                        saved_password,
+                        password
+                    ):
 
-        session["captcha"] = captcha
+                        session["user"] = username
 
-        return redirect("/verify_captcha")
+                        return redirect("/dashboard")
 
-    return render_template("signup.html")
+                    else:
+                        return "Wrong Password"
 
+        return "User Not Found"
+
+    return render_template("signin.html")
 
 # ---------------- CAPTCHA VERIFY ----------------
 @app.route("/verify_captcha", methods=["GET", "POST"])
@@ -189,25 +167,36 @@ def signin():
     if request.method == "POST":
 
         username = request.form["username"]
+
         password = request.form["password"]
 
-        users = load_users()
+        with open("user.csv", "r") as file:
 
-        if username in users:
+            reader = csv.reader(file)
 
-            saved_password = users[username]["password"]
+            next(reader)
 
-            if check_password_hash(saved_password, password):
+            for row in reader:
 
-                session["user"] = username
+                saved_username = row[3]
 
-                return redirect("/dashboard")
+                saved_password = row[4]
 
-            else:
-                return "Wrong Password"
+                if saved_username == username:
 
-        else:
-            return "User Not Found"
+                    if check_password_hash(
+                        saved_password,
+                        password
+                    ):
+
+                        session["user"] = username
+
+                        return redirect("/dashboard")
+
+                    else:
+                        return "Wrong Password"
+
+        return "User Not Found"
 
     return render_template("signin.html")
 

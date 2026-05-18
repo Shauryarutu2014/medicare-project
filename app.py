@@ -74,45 +74,49 @@ def mobile_user():
 
     return render_template("auth.html")
 
-# ---------------- SIGNIN ----------------
-@app.route("/signin", methods=["GET", "POST"])
-def signin():
+# ---------------- SIGNUP ----------------
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
 
     if request.method == "POST":
 
-        username = request.form["username"]
+        fullname = request.form["fullname"]
+        dob = request.form["dob"]
+        email = request.form["email"]
 
+        username = request.form["username"]
         password = request.form["password"]
 
-        with open("user.csv", "r") as file:
+        # SAVE TEMP USER
+        session["temp_user"] = {
 
-            reader = csv.reader(file)
+            "fullname": fullname,
+            "dob": dob,
+            "email": email,
 
-            next(reader)
+            "username": username,
 
-            for row in reader:
+            "password": generate_password_hash(password)
+        }
 
-                saved_username = row[3]
+        # GENERATE HARD CAPTCHA
+        characters = (
+            string.ascii_letters +
+            string.digits +
+            "@#$%&*"
+        )
 
-                saved_password = row[4]
+        captcha = ''.join(
+            random.choice(characters)
+            for i in range(8)
+        )
 
-                if saved_username == username:
+        session["captcha"] = captcha
 
-                    if check_password_hash(
-                        saved_password,
-                        password
-                    ):
+        return redirect("/verify_captcha")
 
-                        session["user"] = username
+    return render_template("signup.html")
 
-                        return redirect("/dashboard")
-
-                    else:
-                        return "Wrong Password"
-
-        return "User Not Found"
-
-    return render_template("signin.html")
 
 # ---------------- CAPTCHA VERIFY ----------------
 @app.route("/verify_captcha", methods=["GET", "POST"])

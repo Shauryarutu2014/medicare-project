@@ -2,39 +2,57 @@
 <html>
 
 <head>
-    <title>Health History</title>
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health History</title>
 
 </head>
 
 <body>
 
-<h1>Health History</h1>
+    <h1>Health History</h1>
 
-{% for item in records %}
+    <button onclick="window.location.href='/dashboard'">
+        Back
+    </button>
 
-<pre>
-=== Medicine Suggestion ===
+    <br><br>
 
-Patient Name: {{ item.user }}
+    <table border="1" cellpadding="10">
 
-Symptoms: {{ item.symptom }}
+        <tr>
 
-Suggestion: {{ item.suggestion }}
+            <th>Username</th>
 
-Primary Medicine: {{ item.medicine }}
+            <th>Date & Time</th>
 
-Date & Time: {{ item.time }}
+            <th>Problem</th>
 
-----------------------------------
-</pre>
+            <th>Symptoms</th>
 
-{% endfor %}
+            <th>Suggestions</th>
 
-<a href="/dashboard">
-    <button>Back</button>
-</a>
+        </tr>
+
+        {% for row in records %}
+
+        <tr>
+
+            <td>{{ row[0] }}</td>
+
+            <td>{{ row[1] }}</td>
+
+            <td>{{ row[2] }}</td>
+
+            <td>{{ row[3] }}</td>
+
+            <td>{{ row[4] }}</td>
+
+        </tr>
+
+        {% endfor %}
+
+    </table>
 
 </body>
+
 </html>

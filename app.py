@@ -174,7 +174,7 @@ def signin():
 
         password = request.form["password"]
 
-        with open("user.csv", "r") as file:
+        with open("users.csv", "r") as file:
 
             reader = csv.reader(file)
 

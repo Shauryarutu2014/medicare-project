@@ -746,7 +746,6 @@ def history():
                 "Suggestions"
             ])
 
-    # LOAD HISTORY
     with open("health_history.csv", "r") as file:
 
         reader = csv.reader(file)
@@ -763,7 +762,6 @@ def history():
         "history.html",
         records=records
     )
-
 
 # -------------------------- Verify OTP -------------------
 @app.route("/verify_captcha", methods=["GET", "POST"])

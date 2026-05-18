@@ -5,7 +5,6 @@ import random
 import string
 import csv
 import os
-import datetime
 from flask import send_file
 
 from werkzeug.security import generate_password_hash
@@ -763,35 +762,6 @@ def history():
         records=records
     )
 
-# -------------------------- Verify OTP -------------------
-@app.route("/verify_captcha", methods=["GET", "POST"])
-def verify_captcha():
-
-    if request.method == "POST":
-
-        entered_captcha = request.form["captcha"]
-
-        if entered_captcha == session["captcha"]:
-
-            users = load_users()
-
-            temp = session["temp_user"]
-
-            users[temp["username"]] = temp
-
-            save_users(users)
-
-            session["user"] = temp["username"]
-
-            return redirect("/dashboard")
-
-        else:
-            return "Wrong CAPTCHA"
-
-    return render_template(
-        "verify_captcha.html",
-        captcha=session["captcha"]
-    )
 
 # ---------------- LOGOUT ----------------
 @app.route("/logout")

@@ -63,42 +63,26 @@ CREATE TABLE IF NOT EXISTS history (
 
 conn.commit()
 
-#----------------- Download CSV File --------------------
-@app.route("/download_users")
-def download_users():
+#----------------- See Users Data --------------------
+@app.route("/allusers")
+def allusers():
 
-    return send_file(
+    cursor.execute("SELECT * FROM users")
 
-        "users.csv",
+    users = cursor.fetchall()
 
-        as_attachment=True
-    )
+    return str(users)
 
-#------------------------ Download History CSV -------------------
-@app.route("/download_history")
-def download_history():
+#------------------------ See History Data -------------------
+@app.route("/allhistory")
+def allhistory():
 
-    return send_file(
+    cursor.execute("SELECT * FROM history")
 
-        "health_history.csv",
+    history = cursor.fetchall()
 
-        as_attachment=True
-    )
+    return str(history)
 
-#-------------------- Saving Data Using CSV -----------------
-if not os.path.exists("users.csv"):
-
-    with open("users.csv", "w", newline="") as file:
-
-        writer = csv.writer(file)
-
-        writer.writerow([
-            "Full Name",
-            "DOB",
-            "Email",
-            "Username",
-            "Password"
-        ])
 
 # ---------------- HOME ----------------
 @app.route("/")

@@ -6,6 +6,7 @@ import string
 import csv
 import os
 from flask import send_file
+import psycopg2
 
 from werkzeug.security import generate_password_hash
 from werkzeug.security import check_password_hash
@@ -13,6 +14,54 @@ from werkzeug.security import check_password_hash
 app = Flask(__name__)
 app.secret_key = "medicare_secret"
 
+#------------------- Database ---------------------
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+conn = psycopg2.connect(DATABASE_URL)
+
+cursor = conn.cursor()
+
+cursor.execute("""
+
+CREATE TABLE IF NOT EXISTS users (
+
+    id SERIAL PRIMARY KEY,
+
+    fullname TEXT,
+
+    dob TEXT,
+
+    email TEXT,
+
+    username TEXT UNIQUE,
+
+    password TEXT
+
+)
+
+""")
+
+cursor.execute("""
+
+CREATE TABLE IF NOT EXISTS history (
+
+    id SERIAL PRIMARY KEY,
+
+    username TEXT,
+
+    datetime TEXT,
+
+    problem TEXT,
+
+    symptoms TEXT,
+
+    suggestions TEXT
+
+)
+
+""")
+
+conn.commit()
 
 #----------------- Download CSV File --------------------
 @app.route("/download_users")
@@ -130,25 +179,25 @@ def verify_captcha():
 
             temp = session["temp_user"]
 
-            # SAVE USER IN CSV
-            with open(
-                "users.csv",
-                "a",
-                newline=""
-            ) as file:
+            # SAVE USER IN POSTGRESQL
+            cursor.execute("""
 
-                writer = csv.writer(file)
+            INSERT INTO users
+            (fullname, dob, email, username, password)
 
-                writer.writerow([
+            VALUES (%s, %s, %s, %s, %s)
 
-                    temp["fullname"],
-                    temp["dob"],
-                    temp["email"],
+            """, (
 
-                    temp["username"],
+                temp["fullname"],
+                temp["dob"],
+                temp["email"],
+                temp["username"],
+                temp["password"]
 
-                    temp["password"]
-                ])
+            ))
+
+            conn.commit()
 
             session["user"] = temp["username"]
 
@@ -171,36 +220,35 @@ def signin():
     if request.method == "POST":
 
         username = request.form["username"]
-
         password = request.form["password"]
 
-        with open("users.csv", "r") as file:
+        cursor.execute(
 
-            reader = csv.reader(file)
+            "SELECT * FROM users WHERE username=%s",
 
-            next(reader)
+            (username,)
+        )
 
-            for row in reader:
+        user = cursor.fetchone()
 
-                saved_username = row[3]
+        if user:
 
-                saved_password = row[4]
+            saved_password = user[5]
 
-                if saved_username == username:
+            if check_password_hash(
+                saved_password,
+                password
+            ):
 
-                    if check_password_hash(
-                        saved_password,
-                        password
-                    ):
+                session["user"] = username
 
-                        session["user"] = username
+                return redirect("/dashboard")
 
-                        return redirect("/dashboard")
+            else:
+                return "Wrong Password"
 
-                    else:
-                        return "Wrong Password"
-
-        return "User Not Found"
+        else:
+            return "User Not Found"
 
     return render_template("signin.html")
 
@@ -677,31 +725,29 @@ def medicine():
 
                 # CURRENT DATE AND TIME
 
-                current_datetime = datetime.now().strftime(
-                    "%d-%m-%Y %I:%M:%S %p"
-                )
+                current_date = datetime.now().strftime("%d-%m-%Y")
 
-                # SAVE HISTORY IN CSV
-                with open(
-                    "health_history.csv",
-                    "a",
-                    newline=""
-                ) as file:
+                current_time = datetime.now().strftime("%I:%M %p")
 
-                    writer = csv.writer(file)
 
-                    writer.writerow([
+                cursor.execute("""
 
-                        session["user"],
+                INSERT INTO history
+                (username, datetime, problem, symptoms, suggestions)
 
-                        current_datetime,
+                VALUES (%s, %s, %s, %s, %s)
 
-                        problem,
+                """, (
 
-                        detected_symptoms,
+                    session["user"],
+                    current_date + " " + current_time,
+                    problem,
+                    detected_symptoms,
+                    suggestion
 
-                        suggestion
-                    ])
+                ))
+
+                conn.commit()
 
                 break
 
@@ -722,33 +768,14 @@ def history():
 
     username = session["user"]
 
-    records = []
+    cursor.execute(
 
-    if not os.path.exists("health_history.csv"):
+        "SELECT * FROM history WHERE username=%s",
 
-        with open("health_history.csv", "w", newline="") as file:
+        (username,)
+    )
 
-            writer = csv.writer(file)
-
-            writer.writerow([
-                "Username",
-                "Date & Time",
-                "Problem",
-                "Symptoms",
-                "Suggestions"
-            ])
-
-    with open("health_history.csv", "r") as file:
-
-        reader = csv.reader(file)
-
-        next(reader)
-
-        for row in reader:
-
-            if row[0] == username:
-
-                records.append(row)
+    records = cursor.fetchall()
 
     return render_template(
         "history.html",

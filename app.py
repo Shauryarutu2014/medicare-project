@@ -63,26 +63,6 @@ CREATE TABLE IF NOT EXISTS history (
 
 conn.commit()
 
-#----------------- See Users Data --------------------
-@app.route("/allusers")
-def allusers():
-
-    cursor.execute("SELECT * FROM users")
-
-    users = cursor.fetchall()
-
-    return str(users)
-
-#------------------------ See History Data -------------------
-@app.route("/allhistory")
-def allhistory():
-
-    cursor.execute("SELECT * FROM history")
-
-    history = cursor.fetchall()
-
-    return str(history)
-
 
 # ---------------- HOME ----------------
 @app.route("/")
@@ -774,6 +754,28 @@ def logout():
     session.pop("user", None)
 
     return redirect("/")
+
+#----------------- See Users Data --------------------
+@app.route("/allusers")
+def allusers():
+
+    cursor.execute("SELECT * FROM users")
+
+    users = cursor.fetchall()
+
+    return str(users)
+
+#------------------------ See History Data -------------------
+@app.route("/allhistory")
+def allhistory():
+
+    cursor.execute("SELECT * FROM history")
+
+    history = cursor.fetchall()
+
+    return str(history)
+
+
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":

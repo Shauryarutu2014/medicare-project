@@ -754,8 +754,7 @@ def logout():
     session.pop("user", None)
 
     return redirect("/")
-
-#----------------- See Users Data --------------------
+# ---------------- ALL USERS ----------------
 @app.route("/allusers")
 def allusers():
 
@@ -763,9 +762,47 @@ def allusers():
 
     users = cursor.fetchall()
 
-    return str(users)
+    html = """
 
-#------------------------ See History Data -------------------
+    <h1>All Users</h1>
+
+    <table border=1 cellpadding=10>
+
+    <tr>
+
+        <th>ID</th>
+        <th>Full Name</th>
+        <th>DOB</th>
+        <th>Email</th>
+        <th>Username</th>
+        <th>Password</th>
+
+    </tr>
+
+    """
+
+    for user in users:
+
+        html += f"""
+
+        <tr>
+
+            <td>{user[0]}</td>
+            <td>{user[1]}</td>
+            <td>{user[2]}</td>
+            <td>{user[3]}</td>
+            <td>{user[4]}</td>
+            <td>{user[5]}</td>
+
+        </tr>
+
+        """
+
+    html += "</table>"
+
+    return html
+
+# ---------------- ALL HISTORY ----------------
 @app.route("/allhistory")
 def allhistory():
 
@@ -773,10 +810,45 @@ def allhistory():
 
     history = cursor.fetchall()
 
-    return str(history)
+    html = """
 
+    <h1>All History</h1>
 
+    <table border=1 cellpadding=10>
 
+    <tr>
+
+        <th>ID</th>
+        <th>Username</th>
+        <th>Date Time</th>
+        <th>Problem</th>
+        <th>Symptoms</th>
+        <th>Suggestions</th>
+
+    </tr>
+
+    """
+
+    for item in history:
+
+        html += f"""
+
+        <tr>
+
+            <td>{item[0]}</td>
+            <td>{item[1]}</td>
+            <td>{item[2]}</td>
+            <td>{item[3]}</td>
+            <td>{item[4]}</td>
+            <td>{item[5]}</td>
+
+        </tr>
+
+        """
+
+    html += "</table>"
+
+    return html
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

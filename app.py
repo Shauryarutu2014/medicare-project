@@ -17,8 +17,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "medicare-dev-secret-key-2024")
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://medicare_user:d7gaTAaBVVS4c5bGmwvCilMnACC9r6tz@dpg-d85efkgjs32c73aftmbg-a.virginia-postgres.render.com/medicare_f2fm"
+)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ADMIN USERNAMES & PASSWORDS — EDIT THIS SECTION TO CHANGE ADMIN CREDENTIALS
@@ -26,13 +28,13 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 # Format: "username": "password"
 # ══════════════════════════════════════════════════════════════════════════════
 ADMIN_USERS = {
-    "shauryagadekar_admin2026": "nsrshauryagadekar2014",   # Admin 1: Shaurya Nitin Gadekar
-    "harshthakre_admin2026":    "smrharshthakre2013",      # Admin 2: Harsh Sanjay Thakre
+    "shauryagadekar_admin2026": "scrypt:32768:8:1$LySTU8ASTVbrVPzb$7e87b299dc3424f9bab5d4873f7e0cb1f2e3506f79da4506662b509fc095072c98cc318c6e2fff630cebb47e370e6744104191792f3560f05cb485acb77e5e0f",   # Admin 1: Shaurya Nitin Gadekar
+    "harshthakre_admin2026": "scrypt:32768:8:1$jj9e3KMDRxKgSgdg$eb9e467dce2305d58d3787d8e0aaad3b87c65e481abf1a29af142b110303ccea6513f615be4f6af352443b8f6756c378e2b44dccfe1bc5cb4f65307a2d6a2e8a",      # Admin 2: Harsh Sanjay Thakre
 }
 # Admin display names (shown in the hidden admin panel)
 ADMIN_DISPLAY = {
-    "shauryagadekar_admin2026": "Shaurya Nitin Gadekar",
-    "harshthakre_admin2026":    "Harsh Sanjay Thakre",
+    "shauryagadekar_admin2026": "Shaurya Gadekar",
+    "harshthakre_admin2026":    "Harsh Thakre",
 }
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -498,7 +500,7 @@ def signin():
             return redirect(url_for("signin"))
 
         # ── Check if admin credentials ──────────────────────────────────────
-        if username in ADMIN_USERS and ADMIN_USERS[username] == password:
+        if username in ADMIN_USERS and check_password_hash(ADMIN_USERS[username], password):
             session.clear()
             session["is_admin"] = True
             session["admin_username"] = username

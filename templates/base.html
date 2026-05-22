@@ -14,16 +14,12 @@
 <!-- Navbar -->
 <nav class="navbar" id="mainNav">
   <div class="nav-container">
-    <a href="{{ url_for('index') }}" class="nav-logo">
-      <img src="{{ url_for('static', filename='images/logo.png') }}"
-           alt="Medicare Logo"
-           class="nav-logo-img"
-           onerror="this.style.display='none'; document.getElementById('navLogoFallback').style.display='flex';" />
-      <span id="navLogoFallback" style="display:flex; align-items:center; gap:.4rem;">
-        <span class="logo-icon">⚕</span>
-        <span class="logo-text">Medi<span class="logo-accent">Care</span></span>
-      </span>
-    </a>
+   <a href="{{ url_for('index') }}" class="nav-logo">
+  <img src="{{ url_for('static', filename='images/logo2.png') }}"
+       alt="Medicare Logo"
+       class="nav-logo-img" />
+  <span class="logo-text">Medi<span class="logo-accent">Care</span></span>
+</a>
 
     <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
       <span></span><span></span><span></span>

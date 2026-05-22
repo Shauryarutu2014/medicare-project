@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Health Tips — Medicare{% endblock %}
+
+{% block content %}
+<section class="page-hero page-hero-sky">
+  <div class="page-hero-container">
+    <h1>💡 Health Tips</h1>
+    <p>{{ total }}+ evidence-based tips for a healthier, happier life.</p>
+  </div>
+</section>
+
+<section class="tips-section">
+  <div class="section-container">
+    <div class="tips-controls">
+      <input type="text" id="tipSearch" class="search-input" placeholder="🔍  Search tips..." />
+      <span class="tips-count-badge" id="tipCount">{{ total }} tips</span>
+    </div>
+    <div class="tips-grid" id="tipsGrid">
+      {% for tip in tips %}
+      <div class="tip-card fade-in" data-tip="{{ tip | lower }}">
+        <span class="tip-number">#{{ loop.index }}</span>
+        <p>{{ tip }}</p>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="no-results" id="noResults" style="display:none;">
+      <span>🔍</span>
+      <p>No tips found for your search. Try a different keyword.</p>
+    </div>
+  </div>
+</section>
+
+<script>
+  const tipSearch = document.getElementById('tipSearch');
+  const tipsGrid  = document.getElementById('tipsGrid');
+  const tipCount  = document.getElementById('tipCount');
+  const noResults = document.getElementById('noResults');
+  const cards     = document.querySelectorAll('.tip-card');
+  tipSearch.addEventListener('input', function () {
+    const q = this.value.toLowerCase();
+    let count = 0;
+    cards.forEach(card => {
+      const matches = !q || card.dataset.tip.includes(q);
+      card.style.display = matches ? '' : 'none';
+      if (matches) count++;
+    });
+    tipCount.textContent = count + ' tip' + (count !== 1 ? 's' : '');
+    noResults.style.display = count === 0 ? 'flex' : 'none';
+    tipsGrid.style.display  = count === 0 ? 'none' : '';
+  });
+</script>
+{% endblock %}

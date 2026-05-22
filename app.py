@@ -1,854 +1,819 @@
-from flask import Flask, render_template, request, redirect, session
-import json
-from datetime import datetime
-import random
-import string
-import csv
 import os
-from flask import send_file
-import psycopg2
+import json
+import random
+import csv
+import io
+from datetime import datetime
+from functools import wraps
 
-from werkzeug.security import generate_password_hash
-from werkzeug.security import check_password_hash
+import psycopg2
+import psycopg2.extras
+from flask import (
+    Flask, render_template, request, redirect, url_for,
+    session, flash, Response
+)
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = "medicare_secret"
+app.secret_key = os.environ.get("SESSION_SECRET", "medicare-dev-secret-key-2024")
 
-#------------------- Database ---------------------
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-conn = psycopg2.connect(DATABASE_URL)
 
-cursor = conn.cursor()
-
-cursor.execute("""
-
-CREATE TABLE IF NOT EXISTS users (
-
-    id SERIAL PRIMARY KEY,
-
-    fullname TEXT,
-
-    dob TEXT,
-
-    email TEXT,
-
-    username TEXT UNIQUE,
-
-    password TEXT
-
-)
-
-""")
-
-cursor.execute("""
-
-CREATE TABLE IF NOT EXISTS history (
-
-    id SERIAL PRIMARY KEY,
-
-    username TEXT,
-
-    datetime TEXT,
-
-    problem TEXT,
-
-    symptoms TEXT,
-
-    suggestions TEXT
-
-)
-
-""")
-
-conn.commit()
+# ══════════════════════════════════════════════════════════════════════════════
+# ADMIN USERNAMES & PASSWORDS — EDIT THIS SECTION TO CHANGE ADMIN CREDENTIALS
+# Add or remove admins by editing the dictionary below.
+# Format: "username": "password"
+# ══════════════════════════════════════════════════════════════════════════════
+ADMIN_USERS = {
+    "shauryagadekar_admin2026": "nsrshauryagadekar2014",   # Admin 1: Shaurya Nitin Gadekar
+    "harshthakre_admin2026":    "smrharshthakre2013",      # Admin 2: Harsh Sanjay Thakre
+}
+# Admin display names (shown in the hidden admin panel)
+ADMIN_DISPLAY = {
+    "shauryagadekar_admin2026": "Shaurya Nitin Gadekar",
+    "harshthakre_admin2026":    "Harsh Sanjay Thakre",
+}
+# ══════════════════════════════════════════════════════════════════════════════
 
 
-# ---------------- HOME ----------------
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    return conn
+
+
+def init_db():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(100) UNIQUE NOT NULL,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS history (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            username VARCHAR(100),
+            problem VARCHAR(255),
+            suggestions TEXT,
+            symptoms TEXT,
+            advice TEXT,
+            searched_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user_id" not in session:
+            flash("Please sign in to access this page.", "warning")
+            return redirect(url_for("signin"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_required(f):
+    """Protects hidden admin routes — redirects to signin if not admin."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("is_admin"):
+            return redirect(url_for("signin"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def load_medicines():
+    data_path = os.path.join(os.path.dirname(__file__), "data", "medicines.json")
+    with open(data_path, "r") as f:
+        return json.load(f)
+
+
+HEALTH_TIPS = [
+    "Drink at least 8 glasses of water daily to stay hydrated.",
+    "Eat a balanced diet rich in fruits, vegetables, and whole grains.",
+    "Exercise for at least 30 minutes a day, 5 days a week.",
+    "Get 7–9 hours of quality sleep every night.",
+    "Avoid smoking and limit alcohol consumption.",
+    "Wash your hands frequently to prevent infections.",
+    "Schedule regular health check-ups with your doctor.",
+    "Maintain a healthy body weight through diet and exercise.",
+    "Reduce stress through meditation, yoga, or deep breathing.",
+    "Limit processed foods, sugar, and saturated fats.",
+    "Include omega-3 fatty acids in your diet (fish, walnuts, flaxseeds).",
+    "Take vitamin D supplements if you have limited sun exposure.",
+    "Practice good posture to avoid back and neck pain.",
+    "Protect your skin from UV rays with sunscreen (SPF 30+).",
+    "Eat breakfast every day to fuel your metabolism.",
+    "Limit screen time and take breaks every hour.",
+    "Keep a consistent daily routine for better mental health.",
+    "Stay socially connected with friends and family.",
+    "Learn to recognize signs of mental health issues and seek help.",
+    "Avoid skipping meals — eat small portions throughout the day.",
+    "Choose stairs over elevators whenever possible.",
+    "Stretch for 5–10 minutes every morning.",
+    "Eat more fiber to improve digestive health.",
+    "Limit sodium intake to reduce blood pressure risk.",
+    "Have your blood pressure checked regularly.",
+    "Monitor your blood sugar if you have diabetes risk factors.",
+    "Keep cholesterol levels in check with a heart-healthy diet.",
+    "Use a helmet when riding a bicycle or motorcycle.",
+    "Always wear a seatbelt when in a vehicle.",
+    "Stay up to date with all recommended vaccinations.",
+    "Avoid self-medicating — always consult a doctor.",
+    "Learn basic first aid and CPR techniques.",
+    "Keep a well-stocked first aid kit at home.",
+    "Reduce caffeine intake if you have trouble sleeping.",
+    "Practice mindfulness to reduce anxiety and stress.",
+    "Limit sugary drinks and replace them with water or herbal tea.",
+    "Read food labels to understand what you are consuming.",
+    "Avoid eating late at night — stop eating 2–3 hours before bed.",
+    "Keep your living environment clean and dust-free.",
+    "Use air purifiers if you live in a high-pollution area.",
+    "Get your eyes checked every 1–2 years.",
+    "Visit the dentist every 6 months for cleaning and check-ups.",
+    "Floss your teeth daily to prevent gum disease.",
+    "Protect your hearing — avoid prolonged exposure to loud noise.",
+    "Stay active during pregnancy with doctor-approved exercises.",
+    "Breastfeed your baby if possible for at least 6 months.",
+    "Track your menstrual cycle for early detection of irregularities.",
+    "Perform monthly breast self-exams.",
+    "Men over 50 should get a prostate screening.",
+    "Women over 40 should get regular mammograms.",
+    "Get a colorectal cancer screening starting at age 45.",
+    "Avoid prolonged sitting — stand and walk every 30 minutes.",
+    "Try intermittent fasting to improve metabolic health.",
+    "Include probiotic-rich foods like yogurt and kefir in your diet.",
+    "Eat slowly and chew thoroughly to improve digestion.",
+    "Stay positive — a positive mindset boosts immunity.",
+    "Laugh often — laughter is proven to reduce stress hormones.",
+    "Spend time in nature to improve mental well-being.",
+    "Garden or do outdoor activities to get fresh air and sunlight.",
+    "Practice gratitude — write 3 things you are grateful for daily.",
+    "Keep a health journal to track your diet, sleep, and exercise.",
+    "Do strength training at least 2 days per week.",
+    "Include cardio exercises like walking, running, or cycling.",
+    "Try swimming — it is excellent for full-body fitness.",
+    "Yoga improves flexibility, balance, and mental clarity.",
+    "Pilates strengthens your core and improves posture.",
+    "Dancing is a fun and effective cardio workout.",
+    "Avoid sitting with crossed legs for long periods.",
+    "Elevate your legs when resting to improve blood circulation.",
+    "Cold showers can boost immunity and improve alertness.",
+    "Steam inhalation helps with respiratory issues.",
+    "Ginger tea is effective for nausea and inflammation.",
+    "Turmeric has powerful anti-inflammatory properties.",
+    "Honey is a natural antibiotic and soothes sore throats.",
+    "Apple cider vinegar can help with digestion and blood sugar.",
+    "Garlic is a natural immune booster.",
+    "Lemon water in the morning supports detoxification.",
+    "Green tea is rich in antioxidants and supports heart health.",
+    "Chamomile tea promotes relaxation and better sleep.",
+    "Peppermint tea relieves headaches and digestive issues.",
+    "Eat more leafy greens like spinach, kale, and broccoli.",
+    "Include colorful vegetables — the more color, the more nutrients.",
+    "Nuts and seeds are excellent sources of healthy fats.",
+    "Avocados provide heart-healthy monounsaturated fats.",
+    "Berries are among the highest-antioxidant foods available.",
+    "Legumes like beans and lentils are high in protein and fiber.",
+    "Whole grain bread is healthier than white refined bread.",
+    "Sweet potatoes are rich in beta-carotene and fiber.",
+    "Eggs are a complete protein source with essential nutrients.",
+    "Salmon is one of the best sources of omega-3 fatty acids.",
+    "Drink warm milk before bed to promote better sleep.",
+    "Keep your bedroom cool and dark for better sleep quality.",
+    "Avoid checking your phone first thing in the morning.",
+    "Spend the first 30 minutes of your day without screens.",
+    "Set boundaries around work to maintain work-life balance.",
+    "Take mental health days when needed — rest is productive.",
+    "Talk to a therapist or counselor when feeling overwhelmed.",
+    "Practice deep diaphragmatic breathing for 5 minutes daily.",
+    "Cold therapy (ice baths) reduces muscle soreness after workouts.",
+    "Massage therapy can reduce muscle tension and stress.",
+    "Acupuncture may help with chronic pain and stress.",
+    "Tai Chi is gentle and effective for balance and flexibility.",
+    "Foam rolling helps release tight muscles.",
+    "Wear supportive footwear to prevent foot and back problems.",
+    "Stretch your hip flexors if you sit all day.",
+    "Do neck stretches to prevent computer-related neck pain.",
+    "Rest your eyes with the 20-20-20 rule: every 20 minutes, look 20 feet away for 20 seconds.",
+    "Blue light glasses can reduce eye strain from screens.",
+    "Maintain proper hydration during exercise.",
+    "Replace electrolytes after intense sweating.",
+    "Eat protein within 30 minutes after a workout.",
+    "Warm up before exercise to prevent injury.",
+    "Cool down and stretch after every workout.",
+    "Do not exercise on an empty stomach — eat a light snack.",
+    "Listen to your body and rest when you feel pain.",
+    "Overtraining can be harmful — rest days are essential.",
+    "Track your steps — aim for 10,000 steps per day.",
+    "Stand desks can help reduce the impact of prolonged sitting.",
+    "Keep your workspace ergonomically organized.",
+    "Wear a back brace if you have chronic lower back pain.",
+    "Orthotics can correct gait issues and prevent joint pain.",
+    "Do pelvic floor exercises to prevent incontinence.",
+    "Kegel exercises are beneficial for both men and women.",
+    "Avoid drinking too much liquid before bed to prevent nighttime waking.",
+    "Practice progressive muscle relaxation for better sleep.",
+    "Visualize calming scenes when you cannot fall asleep.",
+    "Journaling before bed helps clear your mind.",
+    "Consistent wake times are more important than consistent bedtimes.",
+    "Nap for no more than 20–30 minutes to avoid grogginess.",
+    "Spend time with pets — they reduce stress and loneliness.",
+    "Volunteering and helping others improves mental health.",
+    "Learn a new skill — mental stimulation protects brain health.",
+    "Read for at least 20 minutes daily.",
+    "Play brain games like puzzles and chess to stay mentally sharp.",
+    "Travel and new experiences create lasting happiness.",
+    "Music therapy can reduce anxiety and improve mood.",
+    "Art therapy is effective for trauma and emotional healing.",
+    "Writing therapy helps process difficult emotions.",
+    "Support groups can be invaluable for chronic illness management.",
+    "Track your moods using an app or journal.",
+    "Recognize burnout early: fatigue, cynicism, reduced effectiveness.",
+    "Set realistic goals to avoid feeling overwhelmed.",
+    "Practice saying no — boundaries protect your energy.",
+    "Spend time alone to recharge if you are introverted.",
+    "Extroverts should seek social activities for energy.",
+    "Forgiveness reduces stress and improves heart health.",
+    "Compassion toward yourself and others reduces cortisol.",
+    "Altruism and giving increase happiness hormones.",
+    "Connect with your sense of purpose and meaning in life.",
+    "Regular spiritual or religious practice improves mental health.",
+    "Nature walks lower cortisol and blood pressure.",
+    "Gardening reduces depression and anxiety.",
+    "Pet therapy is used clinically for depression and PTSD.",
+    "Volunteering extends lifespan and reduces depression.",
+    "Strong social ties are the #1 predictor of longevity.",
+    "Marriage and committed relationships correlate with better health.",
+    "Loneliness has the same health impact as smoking 15 cigarettes a day.",
+    "Keep in touch with old friends — social capital is health capital.",
+    "Cook at home more often — restaurant food is higher in calories and sodium.",
+    "Meal prep on weekends to make healthy eating easier during the week.",
+    "Avoid eating while distracted — mindful eating reduces overeating.",
+    "Use smaller plates to naturally control portion sizes.",
+    "Eat the rainbow — each color represents different phytonutrients.",
+    "Avoid crash diets — they slow metabolism and cause muscle loss.",
+    "Intermittent fasting (16:8) is effective for weight management.",
+    "Stay consistent — health is built through daily habits, not perfection.",
+    "Small changes add up — you do not need a dramatic overhaul.",
+    "Celebrate non-scale victories: energy, mood, and strength.",
+    "Progress over perfection is the key to long-term health.",
+    "Make health fun — find activities you genuinely enjoy.",
+    "Health is wealth — invest in it daily.",
+    "Prevention is always better than cure.",
+    "Your body is your most important asset — treat it accordingly.",
+    "Aging gracefully is possible with consistent healthy habits.",
+    "It is never too late to start living a healthier life.",
+    "Even 5 minutes of exercise is better than none.",
+    "Start small and build gradually — consistency beats intensity.",
+    "Find an accountability partner for fitness goals.",
+    "Join a class or club to make exercise social.",
+    "Set specific, measurable, achievable health goals.",
+    "Review your health goals monthly and adjust as needed.",
+    "Reward yourself (non-food rewards) when you reach milestones.",
+    "Document your health journey with photos and notes.",
+    "Use a fitness tracker to stay motivated.",
+    "Apps like MyFitnessPal can help track nutrition.",
+    "Headspace or Calm apps can guide meditation practice.",
+    "Sleep tracking apps can identify poor sleep patterns.",
+    "Regular health apps help manage chronic conditions.",
+    "Telemedicine makes access to doctors easier than ever.",
+    "Do not delay seeking medical care — early detection saves lives.",
+    "Know your family health history — it affects your risk factors.",
+    "Get genetic testing if you have a strong family history of disease.",
+    "Ask your doctor about age-appropriate cancer screenings.",
+    "Know the warning signs of a heart attack and stroke.",
+    "FAST: Face drooping, Arm weakness, Speech difficulty, Time to call 911.",
+    "Signs of a heart attack: chest pain, shortness of breath, left arm pain.",
+    "Carry nitroglycerin if prescribed for heart conditions.",
+    "Always carry a list of your medications.",
+    "Wear a medical ID bracelet if you have serious conditions.",
+    "Learn the Heimlich maneuver — it can save a life.",
+    "Know your blood type in case of emergency.",
+    "Keep an emergency contact list accessible on your phone.",
+    "Inform loved ones about your medical conditions.",
+    "Have a healthcare proxy or advance directive in place.",
+    "Mental health is just as important as physical health.",
+    "Seek help without shame — there is no weakness in asking for support.",
+    "Depression and anxiety are medical conditions, not character flaws.",
+    "ADHD, autism, and other neurodivergences deserve understanding.",
+    "Check in on your friends — mental health crises often go unnoticed.",
+    "Suicide hotlines are available 24/7 — you are not alone.",
+    "Recovery is possible — do not give up on yourself or others.",
+    "Self-care is not selfish — it enables you to care for others.",
+    "Prioritize your health — everything else depends on it.",
+    "Drink herbal tea instead of sugary beverages.",
+    "Fermented foods improve gut microbiome health.",
+    "Prebiotic foods (onions, garlic, bananas) feed good bacteria.",
+    "A healthy gut supports immunity and mental health.",
+    "The gut-brain axis connects your digestive and nervous systems.",
+    "Chronic inflammation is linked to most modern diseases.",
+    "Anti-inflammatory foods include berries, fatty fish, and olive oil.",
+    "Reduce inflammatory foods: processed meats, refined carbs, sugar.",
+    "Fasting can trigger cellular autophagy (cellular cleanup).",
+    "Cold exposure activates brown fat and boosts metabolism.",
+    "Sauna use is linked to lower cardiovascular disease risk.",
+    "Breathwork techniques like Wim Hof improve stress response.",
+    "Time in nature (green spaces) measurably improves mood.",
+    "Forest bathing (Shinrin-yoku) lowers cortisol and blood pressure.",
+    "Adequate magnesium supports sleep, mood, and muscle function.",
+    "Most people are deficient in vitamin D, magnesium, and zinc.",
+    "B12 deficiency is common in vegetarians and vegans — supplement it.",
+    "Iron deficiency is the most common nutritional deficiency worldwide.",
+    "Calcium and vitamin D together support bone density.",
+    "Potassium-rich foods (bananas, potatoes) support heart and muscle health.",
+    "Antioxidants protect your cells from oxidative stress.",
+    "Polyphenols in dark chocolate have cardioprotective effects.",
+    "Curcumin in turmeric is one of the most powerful natural anti-inflammatories.",
+    "Quercetin in apples and onions reduces allergy symptoms.",
+    "Lycopene in tomatoes is linked to reduced prostate cancer risk.",
+    "Sulforaphane in broccoli is a powerful cancer-fighting compound.",
+    "Collagen supports skin elasticity and joint health.",
+    "Hyaluronic acid supports joint lubrication and skin moisture.",
+    "CoQ10 supports mitochondrial energy production and heart health.",
+    "Alpha-lipoic acid is a potent antioxidant that supports nerve health.",
+    "Ashwagandha is an adaptogen that reduces cortisol and stress.",
+    "Rhodiola helps with mental fatigue and resilience under stress.",
+    "Lion's mane mushroom supports cognitive function and nerve growth.",
+    "Melatonin supplementation helps reset circadian rhythm.",
+    "L-theanine (in tea) promotes calm focus without drowsiness.",
+    "5-HTP supports serotonin production and mood stability.",
+    "Milk thistle supports liver detoxification.",
+    "Elderberry is a powerful antiviral and immune booster.",
+    "Zinc lozenges can reduce cold duration if taken at onset.",
+    "Vitamin C in high doses can reduce the severity of infections.",
+    "Probiotics reduce antibiotic-associated diarrhea.",
+    "Digestive enzymes improve nutrient absorption after meals.",
+    "Apple cider vinegar before meals may improve digestion.",
+    "Psyllium husk is an excellent soluble fiber for gut health.",
+    "Aloe vera juice supports gut health and acid reflux.",
+    "Berberine has powerful blood sugar and cholesterol-lowering effects.",
+    "Cinnamon improves insulin sensitivity.",
+    "Chromium picolinate supports blood sugar regulation.",
+    "Bitter melon is used traditionally to manage blood sugar.",
+    "Fenugreek seeds slow sugar absorption in digestion.",
+    "Hawthorn berry supports cardiovascular health.",
+    "Aged garlic extract significantly reduces blood pressure.",
+    "Hibiscus tea lowers blood pressure naturally.",
+    "Regular sauna use mimics cardio benefits.",
+    "Zone 2 cardio training is optimal for mitochondrial health.",
+    "VO2 max is the best predictor of long-term health and longevity.",
+    "Grip strength is a surprising predictor of overall health.",
+    "Balance training reduces fall risk in older adults.",
+    "Flexibility training prevents injury and improves mobility.",
+    "Compound movements (squats, deadlifts) maximize hormonal response.",
+    "Heavy resistance training protects bone density as we age.",
+    "Muscle mass is strongly correlated with longevity.",
+    "Protein intake should be 1.6–2.2g per kg body weight for active people.",
+    "Creatine monohydrate is the most researched and effective supplement.",
+    "Caffeine is effective for improving athletic performance.",
+    "Beetroot juice improves endurance through nitrate conversion.",
+    "Tart cherry juice reduces exercise-induced muscle soreness.",
+    "Adequate sleep is the most powerful recovery tool available.",
+    "Growth hormone is primarily released during deep sleep.",
+    "Sleep deprivation increases cortisol and decreases testosterone.",
+    "Alcohol disrupts REM sleep and impairs recovery.",
+    "Smoking significantly increases the risk of lung cancer and heart disease.",
+    "Secondhand smoke is harmful to children and non-smokers.",
+    "Sugary drinks increase diabetes risk independent of weight.",
+    "Processed meats are classified as Group 1 carcinogens by WHO.",
+    "Air fresheners and candles release volatile organic compounds (VOCs).",
+    "BPA and phthalates in plastics are endocrine disruptors — use glass or stainless.",
+    "Fluoride in toothpaste prevents cavities — but do not swallow it.",
+    "Oil pulling (swishing coconut oil) may reduce oral bacteria.",
+    "Water flossers are more effective than string floss for some people.",
+    "Brush your teeth for 2 minutes, twice a day.",
+    "Replace your toothbrush every 3 months.",
+    "Regular flossing reduces the risk of heart disease.",
+    "Gum disease bacteria can travel to the heart and brain.",
+    "The health of your mouth reflects the health of your entire body.",
+]
+
+YOGA_POSES = [
+    {"name": "Mountain Pose (Tadasana)", "image": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&q=80", "benefits": "Improves posture, strengthens thighs and ankles, increases body awareness and steadiness.", "difficulty": "Beginner", "duration": "30–60 seconds"},
+    {"name": "Downward Dog (Adho Mukha Svanasana)", "image": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80", "benefits": "Stretches hamstrings, calves, and spine. Builds arm and shoulder strength. Energizes the body.", "difficulty": "Beginner", "duration": "1–3 minutes"},
+    {"name": "Warrior I (Virabhadrasana I)", "image": "https://images.unsplash.com/photo-1599901860904-17e6ed7083a0?w=400&q=80", "benefits": "Builds strength in legs and core, improves balance, opens hips and chest.", "difficulty": "Beginner", "duration": "30–60 seconds each side"},
+    {"name": "Warrior II (Virabhadrasana II)", "image": "https://images.unsplash.com/photo-1575052814086-f385e2e2ad1b?w=400&q=80", "benefits": "Strengthens legs and arms, improves focus and stamina, stretches hips and groin.", "difficulty": "Beginner", "duration": "30–60 seconds each side"},
+    {"name": "Tree Pose (Vrksasana)", "image": "https://images.unsplash.com/photo-1510894347713-fc3ed6fdf539?w=400&q=80", "benefits": "Improves balance and concentration, strengthens legs, opens hips.", "difficulty": "Beginner", "duration": "30–60 seconds each side"},
+    {"name": "Child's Pose (Balasana)", "image": "https://images.unsplash.com/photo-1552196563-55cd4e45efb3?w=400&q=80", "benefits": "Gently stretches hips, thighs, and ankles. Relieves stress and calms the mind.", "difficulty": "Beginner", "duration": "1–3 minutes"},
+    {"name": "Cobra Pose (Bhujangasana)", "image": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&q=80", "benefits": "Strengthens spine, opens chest, stimulates abdominal organs, relieves back pain.", "difficulty": "Beginner", "duration": "15–30 seconds"},
+    {"name": "Bridge Pose (Setu Bandha Sarvangasana)", "image": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80", "benefits": "Strengthens glutes, hamstrings, and back. Opens chest. Calms the nervous system.", "difficulty": "Beginner", "duration": "30–60 seconds"},
+    {"name": "Seated Forward Bend (Paschimottanasana)", "image": "https://images.unsplash.com/photo-1599901860904-17e6ed7083a0?w=400&q=80", "benefits": "Stretches hamstrings and spine, calms the brain, relieves stress and mild depression.", "difficulty": "Intermediate", "duration": "1–3 minutes"},
+    {"name": "Pigeon Pose (Eka Pada Rajakapotasana)", "image": "https://images.unsplash.com/photo-1575052814086-f385e2e2ad1b?w=400&q=80", "benefits": "Opens hips deeply, stretches hip flexors and rotators, relieves lower back pain.", "difficulty": "Intermediate", "duration": "1–3 minutes each side"},
+    {"name": "Triangle Pose (Trikonasana)", "image": "https://images.unsplash.com/photo-1510894347713-fc3ed6fdf539?w=400&q=80", "benefits": "Stretches legs, hips, and spine. Strengthens core. Improves digestion and balance.", "difficulty": "Beginner", "duration": "30–60 seconds each side"},
+    {"name": "Plank Pose (Phalakasana)", "image": "https://images.unsplash.com/photo-1552196563-55cd4e45efb3?w=400&q=80", "benefits": "Builds core, arm, and shoulder strength. Tones the abdomen. Improves posture.", "difficulty": "Beginner", "duration": "30–60 seconds"},
+    {"name": "Camel Pose (Ustrasana)", "image": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80", "benefits": "Opens chest and throat, stretches front body, stimulates kidneys and adrenal glands.", "difficulty": "Intermediate", "duration": "20–30 seconds"},
+    {"name": "Boat Pose (Navasana)", "image": "https://images.unsplash.com/photo-1599901860904-17e6ed7083a0?w=400&q=80", "benefits": "Strengthens core and hip flexors, tones abdominal muscles, improves balance.", "difficulty": "Intermediate", "duration": "30–60 seconds"},
+    {"name": "Headstand (Sirsasana)", "image": "https://images.unsplash.com/photo-1575052814086-f385e2e2ad1b?w=400&q=80", "benefits": "Increases blood flow to brain, builds shoulder and arm strength, calms the nervous system.", "difficulty": "Advanced", "duration": "30 seconds to 3 minutes"},
+    {"name": "Shoulder Stand (Sarvangasana)", "image": "https://images.unsplash.com/photo-1510894347713-fc3ed6fdf539?w=400&q=80", "benefits": "Stimulates thyroid gland, improves blood circulation, calms the nervous system.", "difficulty": "Advanced", "duration": "1–5 minutes"},
+    {"name": "Lotus Pose (Padmasana)", "image": "https://images.unsplash.com/photo-1552196563-55cd4e45efb3?w=400&q=80", "benefits": "Opens hips and knees, improves posture for meditation, calms the mind.", "difficulty": "Advanced", "duration": "5–30 minutes"},
+    {"name": "Corpse Pose (Savasana)", "image": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&q=80", "benefits": "Promotes deep relaxation, reduces stress and fatigue, integrates benefits of practice.", "difficulty": "Beginner", "duration": "5–15 minutes"},
+    {"name": "Extended Side Angle (Utthita Parsvakonasana)", "image": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80", "benefits": "Strengthens legs, stretches sides, improves endurance and stability.", "difficulty": "Beginner", "duration": "30–60 seconds each side"},
+    {"name": "Happy Baby (Ananda Balasana)", "image": "https://images.unsplash.com/photo-1599901860904-17e6ed7083a0?w=400&q=80", "benefits": "Releases lower back, stretches inner groin, calms the nervous system.", "difficulty": "Beginner", "duration": "1–2 minutes"},
+    {"name": "Crow Pose (Bakasana)", "image": "https://images.unsplash.com/photo-1575052814086-f385e2e2ad1b?w=400&q=80", "benefits": "Builds arm and wrist strength, tones core, improves balance and concentration.", "difficulty": "Advanced", "duration": "10–30 seconds"},
+    {"name": "Half Moon Pose (Ardha Chandrasana)", "image": "https://images.unsplash.com/photo-1510894347713-fc3ed6fdf539?w=400&q=80", "benefits": "Strengthens legs and core, improves balance, stretches hamstrings and spine.", "difficulty": "Intermediate", "duration": "30–60 seconds each side"},
+    {"name": "Supine Twist (Supta Matsyendrasana)", "image": "https://images.unsplash.com/photo-1552196563-55cd4e45efb3?w=400&q=80", "benefits": "Releases spine, massages abdominal organs, reduces stress and tension.", "difficulty": "Beginner", "duration": "1–2 minutes each side"},
+    {"name": "Half Pigeon (Ardha Kapotasana)", "image": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&q=80", "benefits": "Releases hip tension, stretches piriformis, reduces sciatic nerve pain.", "difficulty": "Intermediate", "duration": "1–2 minutes each side"},
+]
+
+
+# ─── Public Routes ─────────────────────────────────────────────────────────────
+
 @app.route("/")
-def home():
-    return render_template("device.html")
+def index():
+    return render_template("index.html")
 
 
-# ---------------- PC USER ----------------
-@app.route("/device/pc")
-def pc_user():
-
-    session["mobile_user"] = False
-
-    return render_template("auth.html")
-
-
-# ---------------- MOBILE USER ----------------
-@app.route("/device/mobile")
-def mobile_user():
-
-    session["mobile_user"] = True
-
-    return render_template("auth.html")
-
-# ---------------- SIGNUP ----------------
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
-
     if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        captcha_answer = request.form.get("captcha_answer", "").strip()
+        captcha_expected = session.get("captcha_answer")
 
-        fullname = request.form["fullname"]
-        dob = request.form["dob"]
-        email = request.form["email"]
+        if not username or not email or not password:
+            flash("All fields are required.", "danger")
+            return redirect(url_for("signup"))
+        if password != confirm:
+            flash("Passwords do not match.", "danger")
+            return redirect(url_for("signup"))
+        if len(password) < 6:
+            flash("Password must be at least 6 characters.", "danger")
+            return redirect(url_for("signup"))
+        if captcha_answer != str(captcha_expected):
+            flash("Incorrect CAPTCHA answer. Please try again.", "danger")
+            return redirect(url_for("signup"))
 
-        username = request.form["username"]
-        password = request.form["password"]
-
-        # SAVE TEMP USER
-        session["temp_user"] = {
-
-            "fullname": fullname,
-            "dob": dob,
-            "email": email,
-
-            "username": username,
-
-            "password": generate_password_hash(password)
-        }
-
-        # GENERATE HARD CAPTCHA
-        characters = (
-            string.ascii_letters +
-            string.digits +
-            "@#$%&*"
-        )
-
-        captcha = ''.join(
-            random.choice(characters)
-            for i in range(8)
-        )
-
-        session["captcha"] = captcha
-
-        return redirect("/verify_captcha")
-
-    return render_template("signup.html")
-
-
-# ---------------- CAPTCHA VERIFY ----------------
-@app.route("/verify_captcha", methods=["GET", "POST"])
-def verify_captcha():
-
-    if request.method == "POST":
-
-        entered_captcha = request.form["captcha"]
-
-        if entered_captcha == session["captcha"]:
-
-            temp = session["temp_user"]
-
-            # SAVE USER IN POSTGRESQL
-            cursor.execute("""
-
-            INSERT INTO users
-            (fullname, dob, email, username, password)
-
-            VALUES (%s, %s, %s, %s, %s)
-
-            """, (
-
-                temp["fullname"],
-                temp["dob"],
-                temp["email"],
-                temp["username"],
-                temp["password"]
-
-            ))
-
+        password_hash = generate_password_hash(password)
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
+                (username, email, password_hash)
+            )
             conn.commit()
+            cur.close()
+            conn.close()
+            flash("Account created! Please sign in.", "success")
+            return redirect(url_for("signin"))
+        except psycopg2.errors.UniqueViolation:
+            flash("Username or email already exists.", "danger")
+            return redirect(url_for("signup"))
+        except Exception:
+            flash("An error occurred. Please try again.", "danger")
+            return redirect(url_for("signup"))
 
-            session["user"] = temp["username"]
+    a, b = random.randint(1, 9), random.randint(1, 9)
+    session["captcha_answer"] = a + b
+    session["captcha_question"] = f"{a} + {b}"
+    return render_template("signup.html", captcha=session["captcha_question"])
 
-            return redirect("/dashboard")
 
-        else:
-            return "Wrong CAPTCHA"
-
-    return render_template(
-
-        "verify_captcha.html",
-
-        captcha=session["captcha"]
-    )
-
-# ---------------- SIGNIN ----------------
 @app.route("/signin", methods=["GET", "POST"])
 def signin():
-
     if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        captcha_answer = request.form.get("captcha_answer", "").strip()
+        captcha_expected = session.get("captcha_answer")
 
-        username = request.form["username"]
-        password = request.form["password"]
+        if not username or not password:
+            flash("Username and password are required.", "danger")
+            return redirect(url_for("signin"))
+        if captcha_answer != str(captcha_expected):
+            flash("Incorrect CAPTCHA answer.", "danger")
+            return redirect(url_for("signin"))
 
-        cursor.execute(
+        # ── Check if admin credentials ──────────────────────────────────────
+        if username in ADMIN_USERS and ADMIN_USERS[username] == password:
+            session.clear()
+            session["is_admin"] = True
+            session["admin_username"] = username
+            session["admin_display"] = ADMIN_DISPLAY.get(username, username)
+            return redirect(url_for("admin_dashboard"))
+        # ───────────────────────────────────────────────────────────────────
 
-            "SELECT * FROM users WHERE username=%s",
+        try:
+            conn = get_db()
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+            user = cur.fetchone()
+            cur.close()
+            conn.close()
+        except Exception:
+            flash("Database error. Please try again.", "danger")
+            return redirect(url_for("signin"))
 
-            (username,)
-        )
-
-        user = cursor.fetchone()
-
-        if user:
-
-            saved_password = user[5]
-
-            if check_password_hash(
-                saved_password,
-                password
-            ):
-
-                session["user"] = username
-
-                return redirect("/dashboard")
-
-            else:
-                return "Wrong Password"
-
+        if user and check_password_hash(user["password_hash"], password):
+            session.clear()
+            session["user_id"] = user["id"]
+            session["username"] = user["username"]
+            session["email"] = user["email"]
+            session["is_admin"] = False
+            flash(f"Welcome back, {user['username']}!", "success")
+            return redirect(url_for("dashboard"))
         else:
-            return "User Not Found"
+            flash("Invalid username or password.", "danger")
+            return redirect(url_for("signin"))
 
-    return render_template("signin.html")
-
-# ---------------- DASHBOARD ----------------
-@app.route("/dashboard")
-def dashboard():
-
-    if "user" not in session:
-        return redirect("/signin")
-
-    return render_template(
-        "dashboard.html",
-        user=session["user"]
-    )
-
-# ---------------- HEALTH TIPS ----------------
-@app.route("/healthtips")
-def healthtips():
-
-    if "user" not in session:
-        return redirect("/signin")
-
-    tips = [
-         "1. Eat a balanced diet.",
-    "2. Stay hydrated.",
-    "3. Exercise regularly.",
-    "4. Take regular breaks while working.",
-    "5. Maintain proper posture.",
-    "6. Wash hands before meals.",
-    "7. Brush teeth twice daily.",
-    "8. Get at least 7–8 hours of sleep.",
-    "9. Avoid processed foods.",
-    "10. Limit sugar intake.",
-    "11. Drink enough water daily.",
-    "12. Take short walks every hour.",
-    "13. Avoid smoking.",
-    "14. Limit alcohol consumption.",
-    "15. Practice deep breathing exercises.",
-    "16. Keep a positive mindset.",
-    "17. Eat more fruits and vegetables.",
-    "18. Avoid junk food.",
-    "19. Include protein in your diet.",
-    "20. Reduce salt intake.",
-    "21. Practice mindfulness meditation.",
-    "22. Stretch before and after exercise.",
-    "23. Maintain a healthy weight.",
-    "24. Wear sunscreen outdoors.",
-    "25. Use ergonomic furniture.",
-    "26. Avoid staring at screens for too long.",
-    "27. Take breaks from phone and social media.",
-    "28. Practice gratitude daily.",
-    "29. Keep your living space clean.",
-    "30. Avoid skipping meals.",
-    "31. Eat fiber-rich foods.",
-    "32. Maintain regular meal times.",
-    "33. Limit caffeine intake.",
-    "34. Keep a journal for mental health.",
-    "35. Engage in hobbies regularly.",
-    "36. Connect with friends and family.",
-    "37. Listen to relaxing music.",
-    "38. Avoid negative news overload.",
-    "39. Take deep breaths during stress.",
-    "40. Laugh often.",
-    "41. Avoid excessive snacking.",
-    "42. Walk or cycle instead of driving short distances.",
-    "43. Practice yoga or stretching daily.",
-    "44. Avoid unnecessary screen time before bed.",
-    "45. Keep your mind active with reading or puzzles.",
-    "46. Avoid processed meats.",
-    "47. Include whole grains in diet.",
-    "48. Avoid trans fats.",
-    "49. Keep a balanced ratio of carbs, fats, and protein.",
-    "50. Take vitamins if needed after consulting a doctor.",
-    "51. Avoid over-eating.",
-    "52. Practice portion control.",
-    "53. Include omega-3 fatty acids in diet.",
-    "54. Practice hand hygiene frequently.",
-    "55. Cover mouth while coughing or sneezing.",
-    "56. Avoid crowded places during flu season.",
-    "57. Keep vaccinations up to date.",
-    "58. Use mosquito repellents when needed.",
-    "59. Avoid standing water to prevent mosquitoes.",
-    "60. Keep first aid kit handy.",
-    "61. Wear proper shoes while exercising.",
-    "62. Maintain dental checkups regularly.",
-    "63. Avoid sharing personal items.",
-    "64. Keep hair clean and well-groomed.",
-    "65. Wear clean clothes daily.",
-    "66. Take care of your skin daily.",
-    "67. Practice self-care routines.",
-    "68. Stay connected socially.",
-    "69. Engage in community activities.",
-    "70. Volunteer occasionally.",
-    "71. Avoid prolonged sitting.",
-    "72. Maintain ergonomic work setup.",
-    "73. Take eye breaks while working on screens.",
-    "74. Blink frequently to prevent dry eyes.",
-    "75. Avoid rubbing eyes excessively.",
-    "76. Use moisturizer if needed.",
-    "77. Keep nails trimmed and clean.",
-    "78. Avoid nail-biting.",
-    "79. Avoid touching face frequently.",
-    "80. Maintain personal hygiene in public places.",
-    "81. Use hand sanitizer when soap is not available.",
-    "82. Clean frequently touched surfaces.",
-    "83. Keep devices clean.",
-    "84. Avoid texting while walking.",
-    "85. Limit phone use before sleep.",
-    "86. Practice meditation for mental clarity.",
-    "87. Avoid stress accumulation.",
-    "88. Delegate tasks when overwhelmed.",
-    "89. Organize workspace for efficiency.",
-    "90. Take short walks during breaks.",
-    "91. Practice deep breathing exercises.",
-    "92. Get sunlight exposure daily.",
-    "93. Keep room well-ventilated.",
-    "94. Avoid indoor pollution.",
-    "95. Drink green tea occasionally.",
-    "96. Include antioxidants in diet.",
-    "97. Avoid excess oil consumption.",
-    "98. Eat seasonal fruits.",
-    "99. Avoid overuse of sugar.",
-    "100. Monitor blood pressure regularly.",
-    "101. Monitor blood sugar levels if at risk.",
-    "102. Check cholesterol regularly.",
-    "103. Get annual health checkups.",
-    "104. Monitor BMI.",
-    "105. Maintain a balanced diet chart.",
-    "106. Keep a daily step count goal.",
-    "107. Practice deep squats or light exercise.",
-    "108. Avoid lifting heavy weights incorrectly.",
-    "109. Stretch before intense exercises.",
-    "110. Avoid prolonged exposure to cold or heat.",
-    "111. Wear protective gear for sports.",
-    "112. Follow traffic rules.",
-    "113. Use seatbelts while driving.",
-    "114. Avoid drinking and driving.",
-    "115. Take breaks during long drives.",
-    "116. Keep emergency contacts ready.",
-    "117. Learn CPR basics.",
-    "118. Practice mindfulness daily.",
-    "119. Avoid negative self-talk.",
-    "120. Celebrate small achievements.",
-    "121. Avoid unhealthy comparisons.",
-    "122. Get mental health counseling if stressed.",
-    "123. Avoid isolation.",
-    "124. Take regular vacations.",
-    "125. Practice deep relaxation techniques.",
-    "126. Laugh daily to reduce stress.",
-    "127. Avoid excessive caffeine consumption.",
-    "128. Limit screen time.",
-    "129. Take frequent short breaks.",
-    "130. Stay hydrated during workouts.",
-    "131. Wear appropriate sportswear.",
-    "132. Maintain safe workout environment.",
-    "133. Track heart rate during exercise.",
-    "134. Avoid skipping warm-up and cool-down.",
-    "135. Practice breathing techniques during yoga.",
-    "136. Include meditation for mental balance.",
-    "137. Keep a positive daily affirmation.",
-    "138. Avoid long periods of sitting.",
-    "139. Stand up every hour.",
-    "140. Walk during phone calls.",
-    "141. Reduce junk food intake gradually.",
-    "142. Include healthy fats in diet.",
-    "143. Avoid fried foods.",
-    "144. Eat home-cooked meals when possible.",
-    "145. Avoid excessive eating outside.",
-    "146. Track calories if needed.",
-    "147. Eat slowly to aid digestion.",
-    "148. Avoid overeating at night.",
-    "149. Take probiotics if recommended.",
-    "150. Include prebiotics and fiber.",
-    "151. Drink warm water in mornings.",
-    "152. Avoid sugary drinks.",
-    "153. Replace sodas with water or herbal tea.",
-    "154. Chew food properly.",
-    "155. Avoid heavy meals late at night.",
-    "156. Include vegetables in every meal.",
-    "157. Eat fruits between meals.",
-    "158. Avoid skipping breakfast.",
-    "159. Have light dinners.",
-    "160. Avoid high-calorie snacks.",
-    "161. Limit salt intake.",
-    "162. Include calcium-rich foods.",
-    "163. Include iron-rich foods.",
-    "164. Include vitamin D foods.",
-    "165. Take supplements if necessary.",
-    "166. Avoid taking too many supplements.",
-    "167. Consult doctor before starting supplements.",
-    "168. Avoid fad diets.",
-    "169. Follow balanced nutrition.",
-    "170. Avoid highly processed foods.",
-    "171. Include omega-3 fatty acids.",
-    "172. Limit fast food intake.",
-    "173. Choose healthy cooking methods.",
-    "174. Prefer steaming or grilling.",
-    "175. Avoid overcooked food.",
-    "176. Avoid burnt food.",
-    "177. Use herbs and spices instead of salt.",
-    "178. Avoid excessive sugar in tea or coffee.",
-    "179. Avoid sugary desserts frequently.",
-    "180. Practice mindful eating.",
-    "181. Drink green smoothies occasionally.",
-    "182. Include nuts and seeds in diet.",
-    "183. Eat whole fruits instead of juice.",
-    "184. Limit processed snacks.",
-    "185. Choose whole grains over refined grains.",
-    "186. Avoid white bread frequently.",
-    "187. Include lentils and beans in meals.",
-    "188. Use olive oil or coconut oil for cooking.",
-    "189. Avoid excessive fried food.",
-    "190. Include yogurt in diet.",
-    "191. Take a multivitamin if needed.",
-    "192. Keep a food diary for tracking.",
-    "193. Avoid emotional eating.",
-    "194. Reduce stress-related snacking.",
-    "195. Limit late-night snacking.",
-    "196. Plan meals ahead to avoid unhealthy choices.",
-    "197. Include seasonal vegetables daily.",
-    "198. Celebrate small victories.",
-    "199. Avoid excessive social media time.",
-    "200. Spend time in nature.",
-    "201. Practice deep breathing exercises daily.",
-    "202. Avoid multitasking constantly.",
-    "203. Prioritize sleep over late-night work.",
-    "204. Avoid sleeping with lights on.",
-    "205. Maintain a sleep schedule.",
-    "206. Avoid screens before bed.",
-    "207. Keep bedroom cool and dark for sleep.",
-    "208. Take short naps if needed.",
-    "209. Avoid napping late in the day.",
-    "210. Limit caffeine after noon.",
-    "211. Maintain mental relaxation routines.",
-    "212. Practice progressive muscle relaxation.",
-    "213. Include mindfulness activities.",
-    "214. Practice yoga or stretching.",
-    "215. Walk outdoors regularly.",
-    "216. Avoid long sedentary periods.",
-    "217. Stand up and stretch every hour.",
-    "218. Take short walks after meals.",
-    "219. Avoid excessive sitting at work.",
-    "220. Use stairs instead of elevator when possible.",
-    "221. Limit elevator use for short distances.",
-    "222. Wear comfortable shoes for walking.",
-    "223. Include cardio exercise thrice a week.",
-    "224. Include strength training twice a week.",
-    "225. Warm-up before exercise.",
-    "226. Cool down after exercise.",
-    "227. Stay hydrated during workouts.",
-    "228. Avoid overtraining.",
-    "229. Listen to your body.",
-    "230. Take rest days for recovery.",
-    "231. Practice balance exercises.",
-    "232. Avoid exercise if sick.",
-    "233. Include stretching before bed.",
-    "234. Avoid intense exercise at night.",
-    "235. Track steps using pedometer or phone.",
-    "236. Set daily movement goals.",
-    "237. Join a fitness group or class.",
-    "238. Stay consistent with workouts.",
-    "239. Include fun physical activities.",
-    "240. Avoid sitting while talking on phone.",
-    "241. Drink water before feeling thirsty.",
-    "242. Avoid sugary drinks frequently.",
-    "243. Include electrolyte drinks if needed.",
-    "244. Avoid overconsumption of sports drinks.",
-    "245. Eat protein after workout.",
-    "246. Include complex carbs before workout.",
-    "247. Avoid heavy meals before exercise.",
-    "248. Avoid late-night intense exercise.",
-    "249. Protect skin from sun with SPF.",
-    "250. Wear hats and sunglasses outdoors.",
-    "251. Avoid direct sun during peak hours.",
-    "252. Stay in shade when possible.",
-    "253. Use sunscreen regularly.",
-    "254. Avoid tanning beds.",
-    "255. Maintain skin hydration.",
-    "256. Use gentle cleansers for skin.",
-    "257. Avoid harsh chemicals on skin.",
-    "258. Check skin for moles regularly.",
-    "259. Consult dermatologist for skin concerns.",
-    "260. Avoid picking at skin.",
-    "261. Keep nails clean and trimmed.",
-    "262. Avoid nail-biting.",
-    "263. Practice dental hygiene daily.",
-    "264. Brush teeth twice a day.",
-    "265. Floss teeth once a day.",
-    "266. Visit dentist regularly.",
-    "267. Avoid sugary snacks between meals.",
-    "268. Limit acidic drinks like soda.",
-    "269. Include calcium-rich foods for teeth.",
-    "270. Drink plenty of water.",
-    "271. Keep a healthy work-life balance.",
-    "272. Avoid excessive overtime.",
-    "273. Spend time with family and friends.",
-    "274. Engage in hobbies regularly.",
-    "275. Take mental health breaks.",
-    "276. Practice meditation or mindfulness.",
-    "277. Avoid excessive stress accumulation.",
-    "278. Write a journal to release stress.",
-    "279. Practice gratitude daily.",
-    "280. Celebrate small wins every day.",
-    "281. Avoid comparing yourself with others.",
-    "282. Focus on personal growth.",
-    "283. Set achievable goals.",
-    "284. Take vacations to recharge.",
-    "285. Practice deep relaxation techniques.",
-    "286. Listen to music for relaxation.",
-    "287. Engage in creative activities.",
-    "288. Laugh often to reduce stress.",
-    "289. Connect with supportive people.",
-    "290. Seek professional help if needed.",
-    "291. Practice self-compassion.",
-    "292. Avoid negative self-talk.",
-    "293. Maintain a positive mindset.",
-    "294. Keep realistic expectations.",
-    "295. Celebrate daily achievements.",
-    "296. Avoid procrastination.",
-    "297. Plan your day effectively.",
-    "298. Use condom to have Sex.",
-    "299. Eat Hygine Food.",
-    "300. Always strive for balanced health."
-    ]
-
-    return render_template("healthtips.html", tips=tips)
-
-# ---------------- YOGA ----------------
-@app.route("/yoga")
-def yoga():
-
-    if "user" not in session:
-        return redirect("/signin")
-
-    yoga_poses = [
-
-        {
-            "name": "1.Mountain Pose (Tadasana)",
-            "img": r"images\Yoga1.jpg",
-            "info": "Improves posture, balance, and grounding."
-        },
-        {
-            "name": "2.Chair Pose (Utkatasana)",
-            "img": r"images\Yoga2.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "3.Warrior I (Virabhadrasana I)",
-            "img": r"images\Yoga3.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "4. Warrior II (Virabhadrasana II)",
-            "img": r"images\Yoga4.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "5. Warrior III (Virabhadrasana III)",
-            "img": r"images\Yoga5.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "6. Reverse Warrior (Viparita Virabhadrasana)",
-            "img": r"images\Yoga6.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "7. Extended Side Angle (Utthita Parsvakonasana)",
-            "img": r"images\Yoga7.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "8. Triangle Pose (Trikonasana)",
-            "img": r"images\Yoga8.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "9. Extended Triangle Pose (Utthita Trikonasana)",
-            "img": r"images\Yoga9.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "10. Half Moon Pose (Ardha Chandrasana)",
-            "img": r"images\Yoga10.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "11. Pyramid Pose (Parsvottanasana)",
-            "img": r"images\Yoga11.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "12. Standing Forward Bend (Uttanasana)",
-            "img": r"images\Yoga12.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "13. Standing Split (Urdhva Prasarita Eka Padasana)",
-            "img": r"images\Yoga13.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "14. Wide-Legged Forward Bend (Prasarita Padottanasana)",
-            "img": r"images\Yoga14.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "15. Garland Pose (Malasana)",
-            "img": r"images\Yoga15.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "16. Eagle Pose (Garudasana)",
-            "img": r"images\Yoga16.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "17. Dancer’s Pose (Natarajasana)",
-            "img": r"images\Yoga17.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "18. Standing Hand to Big Toe Pose (Utthita Hasta Padangusthasana)",
-            "img": r"images\Yoga18.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "19. Chair Twist (Parivrtta Utkatasana)",
-            "img": r"images\Yoga19.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-        {
-            "name": "20. Easy Pose (Sukhasana)",
-            "img": r"images\Yoga19.jpg",
-            "info": "Strengthens legs and spine, tones core."
-        },
-
-    ]
-
-    return render_template(
-        "yoga.html",
-        poses=yoga_poses
-    )
-
-# ---------------- MEDICINE ----------------
-@app.route("/medicine", methods=["GET", "POST"])
-def medicine():
-
-    if "user" not in session:
-        return redirect("/signin")
-
-    suggestion = ""
-    detected_symptoms = ""
-
-    if request.method == "POST":
-
-        problem = request.form["problem"].lower().strip()
-
-        suggestion = "Consult doctor"
-
-        # READ JSON FILE
-        with open("medicine_database.json", "r") as file:
-
-            database = json.load(file)
-
-        # MATCH PROBLEM
-        for item in database:
-
-            if item["problem"].lower().strip() == problem:
-
-                detected_symptoms = ", ".join(item["symptoms"])
-
-                suggestion = ", ".join(item["suggestions"])
-
-                # CURRENT DATE AND TIME
-
-                current_date = datetime.now().strftime("%d-%m-%Y")
-
-                current_time = datetime.now().strftime("%I:%M %p")
+    a, b = random.randint(1, 9), random.randint(1, 9)
+    session["captcha_answer"] = a + b
+    session["captcha_question"] = f"{a} + {b}"
+    return render_template("signin.html", captcha=session["captcha_question"])
 
 
-                cursor.execute("""
-
-                INSERT INTO history
-                (username, datetime, problem, symptoms, suggestions)
-
-                VALUES (%s, %s, %s, %s, %s)
-
-                """, (
-
-                    session["user"],
-                    current_date + " " + current_time,
-                    problem,
-                    detected_symptoms,
-                    suggestion
-
-                ))
-
-                conn.commit()
-
-                break
-
-    return render_template(
-
-        "medicine.html",
-
-        suggestion=suggestion,
-
-        symptoms=detected_symptoms
-    )
-# ---------------- HISTORY ----------------
-@app.route("/history")
-def history():
-
-    if "user" not in session:
-        return redirect("/signin")
-
-    username = session["user"]
-
-    cursor.execute(
-
-        "SELECT * FROM history WHERE username=%s",
-
-        (username,)
-    )
-
-    records = cursor.fetchall()
-
-    return render_template(
-        "history.html",
-        records=records
-    )
-
-
-# ---------------- LOGOUT ----------------
 @app.route("/logout")
 def logout():
+    session.clear()
+    flash("You have been logged out.", "info")
+    return redirect(url_for("index"))
 
-    session.pop("user", None)
 
-    return redirect("/")
-# ---------------- ALL USERS ----------------
-@app.route("/allusers")
-def allusers():
+# ─── User Routes ───────────────────────────────────────────────────────────────
 
-    cursor.execute("SELECT * FROM users")
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT COUNT(*) as cnt FROM history WHERE user_id = %s", (session["user_id"],))
+        history_count = cur.fetchone()["cnt"]
+        cur.execute("SELECT COUNT(*) as cnt FROM users")
+        total_users = cur.fetchone()["cnt"]
+        cur.execute(
+            "SELECT * FROM history WHERE user_id = %s ORDER BY searched_at DESC LIMIT 3",
+            (session["user_id"],)
+        )
+        recent = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception:
+        history_count = 0
+        total_users = 0
+        recent = []
+    return render_template(
+        "dashboard.html",
+        username=session["username"],
+        history_count=history_count,
+        total_users=total_users,
+        recent=recent,
+        tips_count=len(HEALTH_TIPS),
+        yoga_count=len(YOGA_POSES)
+    )
 
-    users = cursor.fetchall()
 
-    html = """
+@app.route("/health-tips")
+@login_required
+def health_tips():
+    return render_template("health_tips.html", tips=HEALTH_TIPS, total=len(HEALTH_TIPS))
 
-    <h1>All Users</h1>
 
-    <table border=1 cellpadding=10>
+@app.route("/yoga")
+@login_required
+def yoga():
+    return render_template("yoga.html", poses=YOGA_POSES)
 
-    <tr>
 
-        <th>ID</th>
-        <th>Full Name</th>
-        <th>DOB</th>
-        <th>Email</th>
-        <th>Username</th>
-        <th>Password</th>
+@app.route("/medicine", methods=["GET", "POST"])
+@login_required
+def medicine():
+    medicines = load_medicines()
+    result = None
+    searched_problem = None
+    if request.method == "POST":
+        problem = request.form.get("problem", "").strip().lower()
+        searched_problem = problem
+        if problem in medicines:
+            result = medicines[problem]
+            result["matched_key"] = problem
+        else:
+            for key, val in medicines.items():
+                if key in problem or problem in key:
+                    result = val
+                    result["matched_key"] = key
+                    searched_problem = key
+                    break
+        if result:
+            try:
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute(
+                    """INSERT INTO history (user_id, username, problem, suggestions, symptoms, advice)
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (session["user_id"], session["username"], searched_problem,
+                     ", ".join(result["suggestions"]), ", ".join(result["symptoms"]), result["advice"])
+                )
+                conn.commit()
+                cur.close()
+                conn.close()
+            except Exception:
+                pass
+    return render_template(
+        "medicine.html",
+        medicines=medicines,
+        result=result,
+        searched_problem=searched_problem,
+        available_conditions=list(medicines.keys())
+    )
 
-    </tr>
 
-    """
+@app.route("/history")
+@login_required
+def history():
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(
+            "SELECT * FROM history WHERE user_id = %s ORDER BY searched_at DESC",
+            (session["user_id"],)
+        )
+        records = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception:
+        records = []
+    return render_template("history.html", records=records)
 
-    for user in users:
 
-        html += f"""
+@app.route("/download-history")
+@login_required
+def download_history():
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(
+            "SELECT problem, suggestions, symptoms, advice, searched_at FROM history WHERE user_id = %s ORDER BY searched_at DESC",
+            (session["user_id"],)
+        )
+        records = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception:
+        records = []
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Problem", "Suggestions", "Symptoms", "Advice", "Searched At"])
+    for r in records:
+        writer.writerow([r["problem"], r["suggestions"], r["symptoms"], r["advice"], r["searched_at"]])
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=my_health_history.csv"}
+    )
 
-        <tr>
 
-            <td>{user[0]}</td>
-            <td>{user[1]}</td>
-            <td>{user[2]}</td>
-            <td>{user[3]}</td>
-            <td>{user[4]}</td>
-            <td>{user[5]}</td>
+# ─── Hidden Admin Routes ───────────────────────────────────────────────────────
+# These routes do NOT appear in the public UI. No links, no menus, no hints.
 
-        </tr>
+@app.route("/admin")
+@admin_required
+def admin_dashboard():
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT COUNT(*) as cnt FROM users")
+        total_users = cur.fetchone()["cnt"]
+        cur.execute("SELECT COUNT(*) as cnt FROM history")
+        total_history = cur.fetchone()["cnt"]
+        cur.execute("SELECT COUNT(*) as cnt FROM history WHERE searched_at >= NOW() - INTERVAL '7 days'")
+        week_searches = cur.fetchone()["cnt"]
+        cur.execute("SELECT username, COUNT(*) as cnt FROM history GROUP BY username ORDER BY cnt DESC LIMIT 5")
+        top_users = cur.fetchall()
+        cur.execute("SELECT problem, COUNT(*) as cnt FROM history GROUP BY problem ORDER BY cnt DESC LIMIT 5")
+        top_conditions = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception:
+        total_users = total_history = week_searches = 0
+        top_users = top_conditions = []
+    return render_template(
+        "admin_dashboard.html",
+        admin_name=session.get("admin_display", "Admin"),
+        total_users=total_users,
+        total_history=total_history,
+        week_searches=week_searches,
+        top_users=top_users,
+        top_conditions=top_conditions,
+    )
 
-        """
 
-    html += "</table>"
+@app.route("/admin/users")
+@admin_required
+def admin_users():
+    search = request.args.get("q", "").strip()
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        if search:
+            cur.execute(
+                "SELECT id, username, email, created_at FROM users WHERE username ILIKE %s OR email ILIKE %s ORDER BY created_at DESC",
+                (f"%{search}%", f"%{search}%")
+            )
+        else:
+            cur.execute("SELECT id, username, email, created_at FROM users ORDER BY created_at DESC")
+        users = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception:
+        users = []
+    return render_template("admin_users.html", users=users, search=search)
 
-    return html
 
-# ---------------- ALL HISTORY ----------------
-@app.route("/allhistory")
-def allhistory():
+@app.route("/admin/history")
+@admin_required
+def admin_history():
+    search = request.args.get("q", "").strip()
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        if search:
+            cur.execute(
+                "SELECT * FROM history WHERE username ILIKE %s OR problem ILIKE %s ORDER BY searched_at DESC",
+                (f"%{search}%", f"%{search}%")
+            )
+        else:
+            cur.execute("SELECT * FROM history ORDER BY searched_at DESC")
+        records = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception:
+        records = []
+    return render_template("admin_history.html", records=records, search=search)
 
-    cursor.execute("SELECT * FROM history")
 
-    history = cursor.fetchall()
+@app.route("/admin/download/users")
+@admin_required
+def admin_download_users():
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT id, username, email, created_at FROM users ORDER BY created_at DESC")
+        users = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception:
+        users = []
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Username", "Email", "Created At"])
+    for u in users:
+        writer.writerow([u["id"], u["username"], u["email"], u["created_at"]])
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=medicare_users.csv"}
+    )
 
-    html = """
 
-    <h1>All History</h1>
+@app.route("/admin/download/history")
+@admin_required
+def admin_download_history():
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT * FROM history ORDER BY searched_at DESC")
+        records = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception:
+        records = []
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Username", "Problem", "Suggestions", "Symptoms", "Advice", "Searched At"])
+    for r in records:
+        writer.writerow([r["id"], r["username"], r["problem"], r["suggestions"], r["symptoms"], r["advice"], r["searched_at"]])
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=medicare_history.csv"}
+    )
 
-    <table border=1 cellpadding=10>
 
-    <tr>
+@app.route("/admin/logout")
+@admin_required
+def admin_logout():
+    session.clear()
+    return redirect(url_for("index"))
 
-        <th>ID</th>
-        <th>Username</th>
-        <th>Date Time</th>
-        <th>Problem</th>
-        <th>Symptoms</th>
-        <th>Suggestions</th>
 
-    </tr>
-
-    """
-
-    for item in history:
-
-        html += f"""
-
-        <tr>
-
-            <td>{item[0]}</td>
-            <td>{item[1]}</td>
-            <td>{item[2]}</td>
-            <td>{item[3]}</td>
-            <td>{item[4]}</td>
-            <td>{item[5]}</td>
-
-        </tr>
-
-        """
-
-    html += "</table>"
-
-    return html
-# ---------------- RUN ----------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    init_db()
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port, debug=False)

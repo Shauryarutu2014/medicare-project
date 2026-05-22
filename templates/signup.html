@@ -1,63 +1,73 @@
-<!DOCTYPE html>
-<html>
+{% extends "base.html" %}
+{% block title %}Sign Up — Medicare{% endblock %}
 
-<head>
+{% block content %}
+<section class="auth-section">
+  <div class="auth-container">
+    <div class="auth-left">
+      <div class="auth-logo-wrap">
+        <img src="{{ url_for('static', filename='images/logo.png') }}"
+             alt="Medicare Logo" class="auth-logo-img"
+             onerror="this.style.display='none';" />
+      </div>
+      <div class="auth-brand">
+        <h2>Join Medicare Today</h2>
+        <p>Create your free account and start your health journey in seconds.</p>
+      </div>
+      <ul class="auth-perks">
+        <li><span class="perk-check">✓</span> 300+ evidence-based health tips</li>
+        <li><span class="perk-check">✓</span> 24 guided yoga poses</li>
+        <li><span class="perk-check">✓</span> Smart medicine suggestions</li>
+        <li><span class="perk-check">✓</span> Personal health history tracking</li>
+        <li><span class="perk-check">✓</span> Downloadable health reports</li>
+      </ul>
+    </div>
 
-    <title>Signup</title>
+    <div class="auth-right">
+      <div class="auth-card">
+        <h1 class="auth-title">Create Account</h1>
+        <p class="auth-subtitle">Already have an account? <a href="{{ url_for('signin') }}">Sign in</a></p>
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <link rel="stylesheet"
-          href="{{ url_for('static', filename='style.css') }}">
-
-</head>
-
-<body>
-
-<div class="container">
-
-    <h1>Create Medicare ID</h1>
-
-    <form action="/signup" method="POST">
-
-        <input type="text"
-       name="fullname"
-       placeholder="Full Name"
-       required>
-
-<input type="date"
-       name="dob"
-       required>
-
-        <input type="text"
-               name="username"
-               placeholder="Username"
-               required>
-
-        <input type="email"
-               name="email"
-               placeholder="Enter Email"
-               required>
-
-        <input type="password"
-               name="password"
-               placeholder="Password"
-               required>
-
-        <button type="submit">
-            Create Account
-        </button>
-
-    </form>
-
-</div>
-
-<div class="logo-box">
-
-    <img src="{{ url_for('static', filename='images/logo2.png') }}"
-         class="my-logo">
-
-</div>
-
-</body>
-</html>
+        <form action="{{ url_for('signup') }}" method="POST" class="auth-form">
+          <div class="form-group">
+            <label for="username">Username</label>
+            <div class="input-wrapper">
+              <span class="input-icon">👤</span>
+              <input type="text" id="username" name="username" placeholder="Choose a username" required minlength="3" autocomplete="username" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="email">Email Address</label>
+            <div class="input-wrapper">
+              <span class="input-icon">✉</span>
+              <input type="email" id="email" name="email" placeholder="Enter your email" required autocomplete="email" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <div class="input-wrapper">
+              <span class="input-icon">🔒</span>
+              <input type="password" id="password" name="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="confirm_password">Confirm Password</label>
+            <div class="input-wrapper">
+              <span class="input-icon">🔒</span>
+              <input type="password" id="confirm_password" name="confirm_password" placeholder="Repeat your password" required autocomplete="new-password" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="captcha_answer">Security Check — What is <strong>{{ captcha }}</strong>?</label>
+            <div class="input-wrapper">
+              <span class="input-icon">🛡</span>
+              <input type="number" id="captcha_answer" name="captcha_answer" placeholder="Enter the answer" required autocomplete="off" />
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

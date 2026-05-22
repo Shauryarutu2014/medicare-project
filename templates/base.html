@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Medicare — Your Health Partner{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar" id="mainNav">
+  <div class="nav-container">
+    <a href="{{ url_for('index') }}" class="nav-logo">
+      <img src="{{ url_for('static', filename='images/logo.png') }}"
+           alt="Medicare Logo"
+           class="nav-logo-img"
+           onerror="this.style.display='none'; document.getElementById('navLogoFallback').style.display='flex';" />
+      <span id="navLogoFallback" style="display:flex; align-items:center; gap:.4rem;">
+        <span class="logo-icon">⚕</span>
+        <span class="logo-text">Medi<span class="logo-accent">Care</span></span>
+      </span>
+    </a>
+
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+      <span></span><span></span><span></span>
+    </button>
+
+    <ul class="nav-links" id="navLinks">
+      <li><a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">Home</a></li>
+      {% if session.get('user_id') %}
+        <li><a href="{{ url_for('dashboard') }}"   class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a></li>
+        <li><a href="{{ url_for('health_tips') }}" class="nav-link {% if request.endpoint == 'health_tips' %}active{% endif %}">Health Tips</a></li>
+        <li><a href="{{ url_for('yoga') }}"        class="nav-link {% if request.endpoint == 'yoga' %}active{% endif %}">Yoga</a></li>
+        <li><a href="{{ url_for('medicine') }}"    class="nav-link {% if request.endpoint == 'medicine' %}active{% endif %}">Medicine</a></li>
+        <li>
+          <span class="nav-user">
+            <span class="user-avatar">{{ session.username[0].upper() }}</span>
+            {{ session.username }}
+          </span>
+        </li>
+        <li><a href="{{ url_for('logout') }}" class="nav-btn nav-btn-outline">Logout</a></li>
+      {% else %}
+        <li><a href="{{ url_for('signin') }}"  class="nav-btn nav-btn-outline">Sign In</a></li>
+        <li><a href="{{ url_for('signup') }}"  class="nav-btn nav-btn-primary">Sign Up</a></li>
+      {% endif %}
+    </ul>
+  </div>
+</nav>
+
+<!-- Flash Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-container">
+      {% for category, message in messages %}
+        <div class="flash flash-{{ category }}">
+          <span>{{ message }}</span>
+          <button class="flash-close" onclick="this.parentElement.remove()">×</button>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<!-- Main Content -->
+<main>{% block content %}{% endblock %}</main>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="footer-container">
+    <div class="footer-brand">
+      <span class="logo-text">Medi<span class="logo-accent">Care</span></span>
+      <p>Your trusted digital health companion. Better health starts here — accessible to everyone, every day.</p>
+    </div>
+    <div class="footer-links">
+      <h4>Platform</h4>
+      <ul>
+        <li><a href="{{ url_for('index') }}">Home</a></li>
+        {% if session.get('user_id') %}
+          <li><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+          <li><a href="{{ url_for('health_tips') }}">Health Tips</a></li>
+          <li><a href="{{ url_for('yoga') }}">Yoga</a></li>
+          <li><a href="{{ url_for('medicine') }}">Medicine</a></li>
+        {% else %}
+          <li><a href="{{ url_for('signin') }}">Sign In</a></li>
+          <li><a href="{{ url_for('signup') }}">Sign Up</a></li>
+        {% endif %}
+      </ul>
+    </div>
+    <div class="footer-links">
+      <h4>Resources</h4>
+      <ul>
+        <li><a href="{{ url_for('health_tips') if session.get('user_id') else url_for('signup') }}">300+ Health Tips</a></li>
+        <li><a href="{{ url_for('yoga') if session.get('user_id') else url_for('signup') }}">Yoga Poses</a></li>
+        <li><a href="{{ url_for('medicine') if session.get('user_id') else url_for('signup') }}">Medicine Guide</a></li>
+        <li><a href="{{ url_for('history') if session.get('user_id') else url_for('signup') }}">Health History</a></li>
+      </ul>
+    </div>
+    <div class="footer-info">
+      <h4>Contact Us</h4>
+      <p>medicareweb2026@gmail.com</p>
+      <br/>
+      <h4>Disclaimer</h4>
+      <p>Medicare provides general health information only. Always consult a qualified healthcare professional for medical advice.</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2025 Medicare. All rights reserved. Designed for better health.</p>
+  </div>
+</footer>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

@@ -1,39 +1,213 @@
-<!DOCTYPE html>
-<html>
+{% extends "base.html" %}
+{% block title %}Medicare — Your Trusted Health Partner{% endblock %}
 
-<head>
+{% block content %}
 
-    <title>Medicare</title>
+<!-- ── Hero ──────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-blob hero-blob-1"></div>
+  <div class="hero-blob hero-blob-2"></div>
+  <div class="hero-container">
+    <div class="hero-text">
+      <div class="hero-badge">
+        <span class="badge-pulse"></span> Trusted Healthcare Platform
+      </div>
+      <h1 class="hero-title">
+        Your Health,<br/>
+        <span class="gradient-text">Our Priority</span>
+      </h1>
+      <p class="hero-subtitle">
+        Medicare brings world-class health guidance, yoga therapy, and intelligent medicine suggestions to your fingertips — available 24/7, completely free.
+      </p>
+      <div class="hero-btns">
+        {% if session.get('user_id') %}
+          <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg">Go to Dashboard</a>
+        {% else %}
+          <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg">
+            <span class="btn-icon">🚀</span> Get Started Free
+          </a>
+          <a href="{{ url_for('signin') }}" class="btn btn-outline btn-lg">Sign In</a>
+        {% endif %}
+      </div>
+      <div class="hero-stats">
+        <div class="hstat">
+          <span class="hstat-num">300+</span>
+          <span class="hstat-lbl">Health Tips</span>
+        </div>
+        <div class="hstat-sep"></div>
+        <div class="hstat">
+          <span class="hstat-num">24</span>
+          <span class="hstat-lbl">Yoga Poses</span>
+        </div>
+        <div class="hstat-sep"></div>
+        <div class="hstat">
+          <span class="hstat-num">20+</span>
+          <span class="hstat-lbl">Conditions</span>
+        </div>
+      </div>
+    </div>
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <div class="hero-visual">
+      <div class="hero-ring"></div>
+      <div class="hero-ring hero-ring-2"></div>
+      <div class="hero-center">⚕</div>
+      <div class="hero-float hero-float-1"><span>❤️</span> Heart Rate Normal</div>
+      <div class="hero-float hero-float-2"><span>🧘</span> Daily Yoga</div>
+      <div class="hero-float hero-float-3"><span>💊</span> Smart Medicine</div>
+    </div>
+  </div>
+</section>
 
-    <link rel="stylesheet"
-    href="{{ url_for('static', filename='style.css') }}">
+<!-- ── About Section ─────────────────────────────────────── -->
+<section class="about-section" id="about">
+  <div class="section-container">
+    <div class="about-grid">
+      <div class="about-text">
+        <span class="section-tag">About Medicare</span>
+        <h2>A Modern Platform Built for <span class="gradient-text">Your Wellness</span></h2>
+        <p>Medicare is a comprehensive digital health platform designed to empower individuals with the knowledge and tools they need to live healthier lives. From expert health tips to guided yoga and intelligent medicine suggestions, we cover every aspect of your well-being.</p>
+        <p>Our platform is built on the principles of accessibility, accuracy, and care — ensuring that quality health information is available to everyone, anywhere, at any time.</p>
+        <a href="{{ url_for('signup') if not session.get('user_id') else url_for('dashboard') }}" class="btn btn-primary">
+          Explore Platform →
+        </a>
+      </div>
+      <div class="about-visual">
+        <div class="about-card">
+          <div class="about-card-icon">🏥</div>
+          <h4>Expert Guidance</h4>
+          <p>Evidence-based health information</p>
+        </div>
+        <div class="about-card">
+          <div class="about-card-icon">🔒</div>
+          <h4>Secure & Private</h4>
+          <p>Your data is always protected</p>
+        </div>
+        <div class="about-card">
+          <div class="about-card-icon">📱</div>
+          <h4>Mobile Friendly</h4>
+          <p>Works on all your devices</p>
+        </div>
+        <div class="about-card">
+          <div class="about-card-icon">⚡</div>
+          <h4>Always Available</h4>
+          <p>24/7 health guidance access</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
-</head>
+<!-- ── What We Offer ─────────────────────────────────────── -->
+<section class="services-section" id="services">
+  <div class="section-container">
+    <div class="section-header">
+      <span class="section-tag">What We Offer</span>
+      <h2>Complete Health Solutions in<br/><span class="gradient-text">One Platform</span></h2>
+      <p>Everything you need to manage, understand, and improve your health — all in one place.</p>
+    </div>
+    <div class="services-grid">
+      <div class="service-card">
+        <div class="service-icon">💊</div>
+        <h3>Medicine Suggestions</h3>
+        <p>Enter your health condition and receive intelligent medicine recommendations backed by medical data, along with symptoms and care advice.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">📋</div>
+        <h3>Health History</h3>
+        <p>Keep a complete record of all your medicine searches with timestamps. Download your personalized health reports as CSV anytime.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">🧘</div>
+        <h3>Yoga Guidance</h3>
+        <p>Access 24 guided yoga poses with images, benefits, duration, and difficulty levels — from beginner to advanced practice.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">💡</div>
+        <h3>Health Tips</h3>
+        <p>Browse 300+ evidence-based health tips covering nutrition, fitness, mental wellness, sleep, and preventive care.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">🚨</div>
+        <h3>Emergency Information</h3>
+        <p>Critical health knowledge including warning signs of heart attacks, strokes, and other emergencies — always at hand when it matters most.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">👨‍⚕️</div>
+        <h3>Doctor Support</h3>
+        <p>Helpful reminders and guidance on when to seek professional medical care, regular screenings, and specialist consultations.</p>
+      </div>
+    </div>
+  </div>
+</section>
 
-<body>
+<!-- ── Why Choose Us ─────────────────────────────────────── -->
+<section class="why-section" id="why">
+  <div class="section-container">
+    <div class="section-header">
+      <span class="section-tag">Why Choose Us</span>
+      <h2>Reasons to Trust <span class="gradient-text">Medicare</span></h2>
+      <p>We are committed to making healthcare accessible, accurate, and beautiful for everyone.</p>
+    </div>
+    <div class="why-grid">
+      <div class="why-card">
+        <div class="why-num">01</div>
+        <h3>Evidence-Based Content</h3>
+        <p>All health tips and medicine suggestions are grounded in established medical knowledge and research.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-num">02</div>
+        <h3>Beautiful Experience</h3>
+        <p>A premium, modern interface designed to make navigating your health journey a pleasure, not a chore.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-num">03</div>
+        <h3>Secure & Private</h3>
+        <p>Your personal health data is encrypted, hashed, and stored securely in our protected PostgreSQL database.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-num">04</div>
+        <h3>Completely Free</h3>
+        <p>Full access to all features — health tips, yoga guides, medicine suggestions, and history tracking — at no cost.</p>
+      </div>
+    </div>
+  </div>
+</section>
 
-<div class="container">
+<!-- ── CTA ───────────────────────────────────────────────── -->
+<section class="cta-section">
+  <div class="cta-container">
+    <h2>Ready to Start Your Health Journey?</h2>
+    <p>Join thousands of users who trust Medicare every day for smarter, healthier decisions.</p>
+    <div class="cta-btns">
+      {% if session.get('user_id') %}
+        <a href="{{ url_for('dashboard') }}" class="btn btn-white btn-lg">Go to Dashboard</a>
+      {% else %}
+        <a href="{{ url_for('signup') }}" class="btn btn-white btn-lg">Get Started Free</a>
+        <a href="{{ url_for('signin') }}" class="btn btn-outline-white btn-lg">Sign In</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
 
-    <h1>Welcome To Medicare</h1>
+<!-- ── Contact ───────────────────────────────────────────── -->
+<section class="contact-section" id="contact">
+  <div class="section-container">
+    <div class="section-header">
+      <span class="section-tag">Get In Touch</span>
+      <h2>Contact <span class="gradient-text">Us</span></h2>
+      <p>Have questions or feedback? We are always happy to hear from you.</p>
+    </div>
+    <div class="contact-inner">
+      <div class="contact-card">
+        <span class="contact-icon">✉️</span>
+        <h3>Email Us</h3>
+        <p>For questions, support, or feedback, reach us at our official email address.</p>
+        <a href="mailto:medicareweb2026@gmail.com" class="contact-email">
+          📧 medicareweb2026@gmail.com
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
 
-
-
-    <a href="/signup">
-        <button>Create Medicare ID</button>
-    </a>
-
-    <a href="/signin">
-        <button>Sign In</button>
-    </a>
-
-     <img src="{{ url_for('static', filename='images/logo.png') }}"
-         class="main-logo">
-
-</div>
-
-</div>
-
-</body>
-</html>
+{% endblock %}

@@ -1,41 +1,132 @@
-<!DOCTYPE html>
-<html>
+{% extends "base.html" %}
+{% block title %}Dashboard — Medicare{% endblock %}
 
-<head>
-    <title>Dashboard</title>
+{% block content %}
+<section class="dashboard-section">
+  <div class="dashboard-container">
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Welcome Header -->
+    <div class="dashboard-header">
+      <div class="welcome-left">
+        <div class="welcome-avatar">{{ username[0].upper() }}</div>
+        <div>
+          <h1>Welcome, <span class="gradient-text">{{ username }}</span>!</h1>
+          <p>Here's your health overview for today.</p>
+        </div>
+      </div>
+      <div class="dashboard-date" id="dashboardDate"></div>
+    </div>
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+    <!-- Stats Row -->
+    <div class="stats-row">
+      <div class="stat-card stat-card-blue">
+        <div class="stat-card-icon">📋</div>
+        <div class="stat-card-info">
+          <span class="stat-card-number">{{ history_count }}</span>
+          <span class="stat-card-label">My Searches</span>
+        </div>
+      </div>
+      <div class="stat-card stat-card-sky">
+        <div class="stat-card-icon">💡</div>
+        <div class="stat-card-info">
+          <span class="stat-card-number">{{ tips_count }}</span>
+          <span class="stat-card-label">Health Tips</span>
+        </div>
+      </div>
+      <div class="stat-card stat-card-ice">
+        <div class="stat-card-icon">🧘</div>
+        <div class="stat-card-info">
+          <span class="stat-card-number">{{ yoga_count }}</span>
+          <span class="stat-card-label">Yoga Poses</span>
+        </div>
+      </div>
+      <div class="stat-card stat-card-indigo">
+        <div class="stat-card-icon">👥</div>
+        <div class="stat-card-info">
+          <span class="stat-card-number">{{ total_users }}</span>
+          <span class="stat-card-label">Total Users</span>
+        </div>
+      </div>
+    </div>
 
-<body>
+    <!-- Feature Cards -->
+    <div class="dash-section-title">
+      <div>
+        <h2>Quick Access</h2>
+        <p>Jump straight into any Medicare feature.</p>
+      </div>
+    </div>
+    <div class="dashboard-grid">
+      <a href="{{ url_for('health_tips') }}" class="dash-card dash-card-blue">
+        <div class="dash-card-icon">💡</div>
+        <h3>Health Tips</h3>
+        <p>Browse {{ tips_count }}+ expert health tips covering fitness, nutrition, sleep, and mental wellness.</p>
+        <span class="dash-card-arrow">Explore Tips →</span>
+      </a>
+      <a href="{{ url_for('yoga') }}" class="dash-card dash-card-sky">
+        <div class="dash-card-icon">🧘</div>
+        <h3>Yoga</h3>
+        <p>Practice {{ yoga_count }} guided yoga poses with benefits, duration, and difficulty levels.</p>
+        <span class="dash-card-arrow">Start Practice →</span>
+      </a>
+      <a href="{{ url_for('medicine') }}" class="dash-card dash-card-ice">
+        <div class="dash-card-icon">💊</div>
+        <h3>Medicine Suggestion</h3>
+        <p>Enter your symptoms and get intelligent medicine suggestions saved to your history.</p>
+        <span class="dash-card-arrow">Get Suggestions →</span>
+      </a>
+      <a href="{{ url_for('history') }}" class="dash-card dash-card-indigo">
+        <div class="dash-card-icon">📋</div>
+        <h3>Health History</h3>
+        <p>View your complete medicine search history and download your personal health report.</p>
+        <span class="dash-card-arrow">View History →</span>
+      </a>
+    </div>
 
-<div class="container">
+    <!-- Recent Activity -->
+    {% if recent %}
+    <div class="dash-section-title">
+      <h2>Recent Searches</h2>
+      <a href="{{ url_for('history') }}" class="view-all-link">View all →</a>
+    </div>
+    <div class="recent-table-wrapper">
+      <table class="recent-table">
+        <thead>
+          <tr>
+            <th>Condition</th>
+            <th>Suggestions</th>
+            <th>Date &amp; Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in recent %}
+          <tr>
+            <td><span class="condition-badge">{{ r.problem | title }}</span></td>
+            <td>{{ r.suggestions[:65] }}{% if r.suggestions|length > 65 %}...{% endif %}</td>
+            <td>
+              <span class="date-badge">{{ r.searched_at.strftime('%d %b %Y') if r.searched_at else '—' }}</span>
+              <span class="time-text">{{ r.searched_at.strftime('%I:%M %p') if r.searched_at else '' }}</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <span class="empty-icon">🔍</span>
+      <h3>No searches yet</h3>
+      <p>Start by searching for a health condition in Medicine Suggestions.</p>
+      <a href="{{ url_for('medicine') }}" class="btn btn-primary">Try Medicine Suggestions</a>
+    </div>
+    {% endif %}
 
-    <h1>Welcome {{ user }}</h1>
+  </div>
+</section>
 
-    <a href="/healthtips">
-        <button>Health Tips</button>
-    </a>
-
-    <a href="/medicine">
-        <button>Medicine Suggestion</button>
-    </a>
-
-    <a href="/yoga">
-        <button>Yoga Info</button>
-    </a>
-
-    <a href="/history">
-        <button>Health History</button>
-    </a>
-
-    <a href="/logout">
-        <button>Logout</button>
-    </a>
-
-</div>
-
-</body>
-</html>
+<script>
+  document.getElementById('dashboardDate').textContent = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
+</script>
+{% endblock %}

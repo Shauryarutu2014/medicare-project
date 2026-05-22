@@ -1,56 +1,113 @@
-<!DOCTYPE html>
-<html>
+{% extends "base.html" %}
+{% block title %}Medicine Suggestion — Medicare{% endblock %}
 
-<head>
+{% block content %}
+<section class="page-hero page-hero-blue">
+  <div class="page-hero-container">
+    <h1>💊 Medicine Suggestion</h1>
+    <p>Enter your health condition for symptoms, medicine suggestions, and care advice.</p>
+  </div>
+</section>
 
-    <title>Medicine Suggestion</title>
+<section class="medicine-section">
+  <div class="section-container">
+    <div class="medicine-layout">
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <!-- Search Card -->
+      <div class="search-card">
+        <h2>Search Condition</h2>
+        <form action="{{ url_for('medicine') }}" method="POST" class="medicine-form">
+          <div class="form-group">
+            <label for="problem">Health Condition</label>
+            <div class="input-wrapper">
+              <span class="input-icon">🔍</span>
+              <input type="text" id="problem" name="problem"
+                     placeholder="e.g. headache, fever, diabetes..."
+                     value="{{ searched_problem or '' }}"
+                     required autocomplete="off" list="conditionsList" />
+              <datalist id="conditionsList">
+                {% for cond in available_conditions %}
+                  <option value="{{ cond }}">
+                {% endfor %}
+              </datalist>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Get Suggestions</button>
+        </form>
 
-    <link rel="stylesheet"
-          href="{{ url_for('static', filename='style.css') }}">
+        <div class="condition-list">
+          <h4>Common Conditions</h4>
+          <div class="condition-tags">
+            {% for cond in available_conditions %}
+            <span class="condition-tag" onclick="document.getElementById('problem').value='{{ cond }}'; document.querySelector('.medicine-form').submit();">
+              {{ cond | title }}
+            </span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
 
-</head>
+      <!-- Result Card -->
+      <div>
+        {% if result %}
+        <div class="result-card">
+          <div class="result-header">
+            <span class="result-category">Medicine Suggestion</span>
+            <h2>{{ searched_problem | title }}</h2>
+          </div>
 
-<body>
+          <div class="result-section">
+            <h3><span class="section-dot dot-red"></span> Symptoms</h3>
+            <ul class="symptom-list">
+              {% for sym in result.symptoms %}
+              <li><span>⚠</span> {{ sym }}</li>
+              {% endfor %}
+            </ul>
+          </div>
 
+          <div class="result-section">
+            <h3><span class="section-dot dot-blue"></span> Suggested Medicines</h3>
+            <div class="medicine-pills">
+              {% for med in result.suggestions %}
+              <div class="medicine-pill">💊 {{ med }}</div>
+              {% endfor %}
+            </div>
+          </div>
 
+          <div class="result-section">
+            <h3><span class="section-dot dot-sky"></span> Medical Advice</h3>
+            <div class="advice-box">{{ result.advice }}</div>
+          </div>
 
-<h1>Medicine Suggestion</h1>
+          <div class="disclaimer-box">
+            ⚠ <strong>Disclaimer:</strong> This information is for general guidance only. Always consult a qualified healthcare professional before taking any medication.
+          </div>
+        </div>
 
-<form method="POST">
+        {% elif searched_problem %}
+        <div class="no-result-card">
+          <span class="placeholder-icon">🔎</span>
+          <h3>No results found for "{{ searched_problem }}"</h3>
+          <p>Try searching for one of the conditions listed on the left, or use a different keyword.</p>
+          <div class="placeholder-examples">
+            <span>headache</span><span>fever</span><span>diabetes</span><span>anxiety</span>
+          </div>
+        </div>
 
-    <label>Enter Problem:</label>
+        {% else %}
+        <div class="placeholder-card">
+          <span class="placeholder-icon">💊</span>
+          <h3>Enter a condition to get started</h3>
+          <p>Type a health condition in the search box or click one of the quick-select tags on the left. Results are saved to your health history.</p>
+          <div class="placeholder-examples">
+            <span>headache</span><span>fever</span><span>cold</span><span>diabetes</span>
+            <span>anxiety</span><span>back pain</span>
+          </div>
+        </div>
+        {% endif %}
+      </div>
 
-    <br><br>
-
-    <textarea
-        name="problem"
-        rows="5"
-        cols="40"
-        placeholder="Example: fever, cold, headache"></textarea>
-
-    <br><br>
-
-    <button type="submit">
-        Generate Suggestion
-    </button>
-
-</form>
-
-<br><br>
-
-<h2>Symptoms:</h2>
-<p>{{ symptoms }}</p>
-
-<h2>Suggestion:</h2>
-<p>{{ suggestion }}</p>
-
-<br>
-
-<a href="/dashboard">
-    <button>Back</button>
-</a>
-
-</body>
-</html>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,65 +1,76 @@
-<!DOCTYPE html>
-<html>
+{% extends "base.html" %}
+{% block title %}Health History — Medicare{% endblock %}
 
-<head>
+{% block content %}
+<section class="page-hero page-hero-blue">
+  <div class="page-hero-container">
+    <h1>📋 Health History</h1>
+    <p>Your personal medicine search history — every search saved and searchable.</p>
+  </div>
+</section>
 
-    <title>Health History</title>
-
-    <link rel="stylesheet"
-          href="{{ url_for('static', filename='style.css') }}">
-
-</head>
-
-<body>
-
-    <div class="container">
-
-        <h1 class="title">
-            Health History
-        </h1>
-
-        <a href="/dashboard">
-
-            <button class="back-btn">
-                Back
-            </button>
-
-        </a>
-
-        <table class="history-table">
-
-            <tr>
-
-                <th>Date & Time</th>
-
-                <th>Problem</th>
-
-                <th>Symptoms</th>
-
-                <th>Suggestions</th>
-
-            </tr>
-
-            {% for row in records %}
-
-            <tr>
-
-                <td>{{ row[1] }}</td>
-
-                <td>{{ row[2] }}</td>
-
-                <td>{{ row[3] }}</td>
-
-                <td>{{ row[4] }}</td>
-
-            </tr>
-
-            {% endfor %}
-
-        </table>
-
+<section class="history-section">
+  <div class="section-container">
+    <div class="history-controls">
+      <input type="text" id="historySearch" class="search-input" placeholder="🔍  Search history..." />
+      <div class="history-actions">
+        <span class="record-count">{{ records|length }} records</span>
+        {% if records %}
+        <a href="{{ url_for('download_history') }}" class="btn btn-outline btn-sm">⬇ Download CSV</a>
+        {% endif %}
+      </div>
     </div>
 
-</body>
+    {% if records %}
+    <div class="history-table-wrapper">
+      <table class="history-table" id="historyTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Condition</th>
+            <th>Suggestions</th>
+            <th>Symptoms</th>
+            <th>Date &amp; Time</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody">
+          {% for r in records %}
+          <tr class="history-row">
+            <td class="row-num">{{ loop.index }}</td>
+            <td><span class="condition-badge">{{ r.problem | title }}</span></td>
+            <td class="suggestions-cell"><span class="suggestions-text">{{ r.suggestions }}</span></td>
+            <td class="symptoms-cell"><span class="symptoms-text">{{ r.symptoms[:60] if r.symptoms else '—' }}{% if r.symptoms and r.symptoms|length > 60 %}...{% endif %}</span></td>
+            <td class="date-cell">
+              {% if r.searched_at %}
+                <span class="date-badge">{{ r.searched_at.strftime('%d %b %Y') }}</span>
+                <span class="time-text">{{ r.searched_at.strftime('%I:%M %p') }}</span>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <span class="empty-icon">📋</span>
+      <h3>No health history yet</h3>
+      <p>Your medicine searches will appear here. Start by searching for a condition.</p>
+      <a href="{{ url_for('medicine') }}" class="btn btn-primary">Search Medicine</a>
+    </div>
+    {% endif %}
+  </div>
+</section>
 
-</html>
+<script>
+  const hs = document.getElementById('historySearch');
+  if (hs) {
+    hs.addEventListener('input', function() {
+      const q = this.value.toLowerCase();
+      document.querySelectorAll('.history-row').forEach(row => {
+        row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? '' : 'none';
+      });
+    });
+  }
+</script>
+{% endblock %}

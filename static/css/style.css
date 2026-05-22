@@ -800,3 +800,10 @@ img { max-width: 100%; }
   .admin-nav { flex-wrap: wrap; height: auto; padding: .75rem 1rem; gap: .5rem; }
   .admin-nav-links { display: none; }
 }
+
+.hero-logo {
+  width: 70px;
+  height: 70px;
+  object-fit: contain;
+  margin-bottom: 15px;
+}

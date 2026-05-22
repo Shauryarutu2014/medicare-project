@@ -221,11 +221,16 @@ img { max-width: 100%; }
 .hero-ring-2 { width: 220px; height: 220px; border-color: var(--sky-400); opacity: .3; animation-direction: reverse; animation-duration: 14s; }
 @keyframes spinRing { to { transform: rotate(360deg); } }
 .hero-center {
-  width: 140px; height: 140px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--blue-600), var(--sky-500));
-  display: flex; align-items: center; justify-content: center;
-  font-size: 4rem; box-shadow: 0 0 40px rgba(59,130,246,.35);
-  position: relative; z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-logo-center {
+  width: 70px;
+  height: 70px;
+  object-fit: contain;
+  border-radius: 50%;
 }
 .hero-float {
   position: absolute; background: var(--white);
@@ -809,49 +814,64 @@ img { max-width: 100%; }
 }
 
 /* ── Founder Section ── */
-.founder-section {
-  background: linear-gradient(135deg, var(--ice) 0%, var(--blue-50) 100%);
-  padding: 70px 20px;
-  text-align: center;
-  color: var(--gray-900);
-}
-
-.founder-section h2 {
-  font-size: 2rem;
-  font-weight: 800;
-  color: var(--blue-700);
-}
-
-.founder-grid {
-  display: flex;
-  justify-content: center;
-  gap: 30px;
-  flex-wrap: wrap;
-  margin-top: 35px;
-}
-
 .founder-card {
+  width: 230px;
+  height: 320px;
+  perspective: 1000px;
+}
+
+.founder-inner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transition: transform 0.8s;
+  transform-style: preserve-3d;
+}
+
+.founder-card:hover .founder-inner {
+  transform: rotateY(180deg);
+}
+
+.founder-front,
+.founder-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-xl);
+  backface-visibility: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 15px;
+  box-shadow: var(--shadow-md);
+}
+
+.founder-front {
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
-  padding: 20px;
-  width: 230px;
-  box-shadow: var(--shadow-md);
-  transition: var(--transition);
 }
 
-.founder-card:hover {
-  transform: translateY(-5px);
-  box-shadow: var(--shadow-blue);
-}
-
-.founder-card img {
+.founder-front img {
   width: 100%;
-  height: 200px;
+  height: 180px;
   object-fit: cover;
   border-radius: var(--radius-lg);
   margin-bottom: 10px;
+}
+
+.founder-back {
+  background: linear-gradient(135deg, var(--blue-600), var(--sky-500));
+  color: white;
+  transform: rotateY(180deg);
+  text-align: center;
+}
+
+.founder-back p {
+  font-size: 0.9rem;
+  margin-top: 8px;
+  opacity: 0.9;
 }
 
 /* ── Special Thanks ── */

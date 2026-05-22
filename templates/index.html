@@ -13,9 +13,6 @@
         <span class="badge-pulse"></span> Trusted Healthcare Platform
       </div>
       <div class="hero-brand">
-  <img src="{{ url_for('static', filename='images/logo.png') }}"
-       alt="Medicare Logo"
-       class="hero-logo" />
 </div>
       <h1 class="hero-title">
         Your Health,<br/>
@@ -46,7 +43,7 @@
         </div>
         <div class="hstat-sep"></div>
         <div class="hstat">
-          <span class="hstat-num">20+</span>
+          <span class="hstat-num">250+</span>
           <span class="hstat-lbl">Conditions</span>
         </div>
       </div>
@@ -55,7 +52,11 @@
     <div class="hero-visual">
       <div class="hero-ring"></div>
       <div class="hero-ring hero-ring-2"></div>
-      <div class="hero-center">⚕</div>
+     <div class="hero-center">
+  <img src="{{ url_for('static', filename='images/logo2.png') }}"
+       alt="Medicare Logo"
+       class="hero-logo-center" />
+</div>
       <div class="hero-float hero-float-1"><span>❤️</span> Heart Rate Normal</div>
       <div class="hero-float hero-float-2"><span>🧘</span> Daily Yoga</div>
       <div class="hero-float hero-float-3"><span>💊</span> Smart Medicine</div>
@@ -216,27 +217,43 @@
 </section>
 
 <!-- ── Founder Section ───────────────────────────── -->
-<section class="founder-section">
-  <div class="section-container">
-    <h2>Founder Info</h2>
+<div class="founder-card">
+  <div class="founder-inner">
 
-    <div class="founder-grid">
-
-      <div class="founder-card">
-        <img src="{{ url_for('static', filename='images/founder1.jpg') }}" alt="Founder 1">
-        <h3>Shaurya Nitin Gadekar</h3>
-        <p>Founder</p>
-      </div>
-
-      <div class="founder-card">
-        <img src="{{ url_for('static', filename='images/founder2.jpg') }}" alt="Founder 2">
-        <h3>Harsh Sanjay Thakre</h3>
-        <p>Co-Founder</p>
-      </div>
-
+    <!-- FRONT -->
+    <div class="founder-front">
+      <img src="shaurya.jpg" alt="Founder">
+      <h3>Shaurya Nitin Gadekar</h3>
     </div>
+
+    <!-- BACK -->
+    <div class="founder-back">
+      <h3>Shaurya Nitin Gadekar</h3>
+      <p>Co-Founder</p>
+      <p>Software Developer | AI Enthusiast</p>
+    </div>
+
   </div>
-</section>
+</div>
+
+<div class="founder-card">
+  <div class="founder-inner">
+
+    <!-- FRONT -->
+    <div class="founder-front">
+      <img src="harsh.jpg" alt="Founder">
+      <h3>Harsh Sanjay Thakre</h3>
+    </div>
+
+    <!-- BACK -->
+    <div class="founder-back">
+      <h3>Harsh Sanjay Thakre</h3>
+      <p>Co-Founder</p>
+      <p>Frontend Developer | UI Designer</p>
+    </div>
+
+  </div>
+</div>
 
 <!-- ── Special Thanks Section ─────────────────────── -->
 <section class="thanks-section">

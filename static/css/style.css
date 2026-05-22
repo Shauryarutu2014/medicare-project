@@ -866,7 +866,7 @@ img { max-width: 100%; }
 
 /* ── Blessing Section ── */
 .blessing-section {
-  background: #0b0b0b;
+  background: #1e3a8a;
   color: white;
   padding: 60px 20px;
   text-align: center;
@@ -881,8 +881,13 @@ img { max-width: 100%; }
 }
 
 .blessing-card {
-  background: #1a1a1a;
+  background:  rgba(255, 255, 255, 0.1);
   padding: 20px;
   border-radius: 12px;
   width: 200px;
+}
+
+.blessing-card h3,
+.blessing-card p {
+  color: white;
 }

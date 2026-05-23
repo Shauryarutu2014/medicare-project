@@ -40,8 +40,12 @@ ADMIN_DISPLAY = {
 
 
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL)
-    return conn
+    return psycopg2.connect(
+        host="localhost",
+        database="medicare_db",
+        user="postgres",
+        password="SNG@2014"
+    )
 
 
 def init_db():
@@ -438,6 +442,7 @@ def index():
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
+
         username = request.form.get("username", "").strip()
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "")
@@ -445,44 +450,57 @@ def signup():
         captcha_answer = request.form.get("captcha_answer", "").strip()
         captcha_expected = session.get("captcha_answer")
 
+        # ---------------- VALIDATION ----------------
         if not username or not email or not password:
             flash("All fields are required.", "danger")
             return redirect(url_for("signup"))
+
         if password != confirm:
             flash("Passwords do not match.", "danger")
             return redirect(url_for("signup"))
+
         if len(password) < 6:
             flash("Password must be at least 6 characters.", "danger")
             return redirect(url_for("signup"))
-        if captcha_answer != str(captcha_expected):
+
+        if not captcha_expected or captcha_answer != str(captcha_expected):
             flash("Incorrect CAPTCHA answer. Please try again.", "danger")
             return redirect(url_for("signup"))
 
+        # ---------------- HASH PASSWORD ----------------
         password_hash = generate_password_hash(password)
+
+        # ---------------- DATABASE INSERT ----------------
+        conn = get_db()
+        cur = conn.cursor()
+
         try:
-            conn = get_db()
-            cur = conn.cursor()
             cur.execute(
                 "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
                 (username, email, password_hash)
             )
             conn.commit()
-            cur.close()
-            conn.close()
-            flash("Account created! Please sign in.", "success")
+
+            flash("Account created successfully! Please sign in.", "success")
             return redirect(url_for("signin"))
-        except psycopg2.errors.UniqueViolation:
-            flash("Username or email already exists.", "danger")
-            return redirect(url_for("signup"))
-        except Exception:
-            flash("An error occurred. Please try again.", "danger")
+
+        except Exception as e:
+            conn.rollback()
+            print("❌ SIGNUP ERROR:", repr(e))   # IMPORTANT DEBUG LINE
+
+            flash("Username or email already exists or database error.", "danger")
             return redirect(url_for("signup"))
 
+        finally:
+            cur.close()
+            conn.close()
+
+    # ---------------- GET REQUEST (CAPTCHA) ----------------
     a, b = random.randint(1, 9), random.randint(1, 9)
     session["captcha_answer"] = a + b
     session["captcha_question"] = f"{a} + {b}"
-    return render_template("signup.html", captcha=session["captcha_question"])
 
+    return render_template("signup.html", captcha=session["captcha_question"])
 
 @app.route("/signin", methods=["GET", "POST"])
 def signin():
@@ -593,45 +611,65 @@ def yoga():
 @app.route("/medicine", methods=["GET", "POST"])
 @login_required
 def medicine():
+
     medicines = load_medicines()
+
     result = None
     searched_problem = None
+
     if request.method == "POST":
+
         problem = request.form.get("problem", "").strip().lower()
+
         searched_problem = problem
-        if problem in medicines:
-            result = medicines[problem]
-            result["matched_key"] = problem
-        else:
-            for key, val in medicines.items():
-                if key in problem or problem in key:
-                    result = val
-                    result["matched_key"] = key
-                    searched_problem = key
-                    break
+
+        for key, value in medicines.items():
+
+            if key.lower() == problem or problem in key.lower():
+
+                result = value
+                result["problem"] = key
+                break
+
         if result:
+
             try:
                 conn = get_db()
                 cur = conn.cursor()
+
                 cur.execute(
-                    """INSERT INTO history (user_id, username, problem, suggestions, symptoms, advice)
-                       VALUES (%s, %s, %s, %s, %s, %s)""",
-                    (session["user_id"], session["username"], searched_problem,
-                     ", ".join(result["suggestions"]), ", ".join(result["symptoms"]), result["advice"])
+                    """
+                    INSERT INTO history
+                    (user_id, username, problem, suggestions, symptoms, advice)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        session["user_id"],
+                        session["username"],
+                        result["problem"],
+                        ", ".join(result["suggestions"]),
+                        ", ".join(result["symptoms"]),
+                        result.get("advice", "No advice available")
+                    )
                 )
+
                 conn.commit()
+
                 cur.close()
                 conn.close()
-            except Exception:
-                pass
+
+            except Exception as e:
+                print(e)
+
+    available_conditions = [item["problem"] for item in medicines]
+
     return render_template(
         "medicine.html",
         medicines=medicines,
         result=result,
         searched_problem=searched_problem,
-        available_conditions=list(medicines.keys())
+        available_conditions=available_conditions
     )
-
 
 @app.route("/history")
 @login_required

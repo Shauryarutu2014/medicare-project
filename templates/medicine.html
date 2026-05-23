@@ -66,7 +66,7 @@
           </div>
 
           <div class="result-section">
-            <h3><span class="section-dot dot-blue"></span> Suggested Medicines</h3>
+            <h3><span class="section-dot dot-blue"></span> Suggestion </h3>
             <div class="medicine-pills">
               {% for med in result.suggestions %}
               <div class="medicine-pill">💊 {{ med }}</div>
@@ -74,10 +74,6 @@
             </div>
           </div>
 
-          <div class="result-section">
-            <h3><span class="section-dot dot-sky"></span> Medical Advice</h3>
-            <div class="advice-box">{{ result.advice }}</div>
-          </div>
 
           <div class="disclaimer-box">
             ⚠ <strong>Disclaimer:</strong> This information is for general guidance only. Always consult a qualified healthcare professional before taking any medication.

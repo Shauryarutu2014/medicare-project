@@ -4,41 +4,48 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Panel — Medicare</title>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
+
 <body class="admin-body admin-grid-bg">
 
-<!-- Admin Navbar -->
+<!-- NAVBAR -->
 <nav class="admin-nav">
   <div class="admin-logo">
     <div class="admin-logo-icon">⚕</div>
     <span class="admin-logo-text">MEDICARE</span>
     <span class="admin-logo-badge">ADMIN</span>
   </div>
+
   <div class="admin-nav-right">
     <div class="admin-user-info">
       Logged in as <strong>{{ admin_name }}</strong>
     </div>
+
     <div class="admin-nav-links">
       <a href="{{ url_for('admin_dashboard') }}" class="admin-nav-link active">Dashboard</a>
-      <a href="{{ url_for('admin_users') }}"     class="admin-nav-link">Users</a>
-      <a href="{{ url_for('admin_history') }}"   class="admin-nav-link">History</a>
+      <a href="{{ url_for('admin_users') }}" class="admin-nav-link">Users</a>
+      <a href="{{ url_for('admin_history') }}" class="admin-nav-link">History</a>
     </div>
+
     <a href="{{ url_for('admin_logout') }}" class="admin-nav-logout">⏻ Logout</a>
   </div>
 </nav>
 
 <div class="admin-page">
 
-  <!-- Page Title -->
+  <!-- TITLE -->
   <div class="admin-page-title">// <span>ADMIN</span> CONTROL CENTER</div>
-  <div class="admin-breadcrumb">medicare / <span>admin</span> / dashboard — {{ admin_name }}</div>
+  <div class="admin-breadcrumb">
+    medicare / admin / dashboard — {{ admin_name }}
+  </div>
 
-  <!-- Stats -->
+  <!-- STATS -->
   <div class="admin-stats">
-    <div class="admin-stat">
+     <div class="admin-stat">
       <div class="admin-stat-label">Total Users</div>
       <div class="admin-stat-value">{{ total_users }}</div>
       <div class="admin-stat-sub">registered accounts</div>
@@ -46,81 +53,68 @@
     <div class="admin-stat">
       <div class="admin-stat-label">Total Searches</div>
       <div class="admin-stat-value">{{ total_history }}</div>
-      <div class="admin-stat-sub">medicine queries</div>
     </div>
+
     <div class="admin-stat">
       <div class="admin-stat-label">This Week</div>
       <div class="admin-stat-value">{{ week_searches }}</div>
-      <div class="admin-stat-sub">searches (last 7 days)</div>
     </div>
+
     <div class="admin-stat">
       <div class="admin-stat-label">Avg / User</div>
-      <div class="admin-stat-value">{{ (total_history // total_users) if total_users > 0 else 0 }}</div>
-      <div class="admin-stat-sub">searches per user</div>
+      <div class="admin-stat-value">
+        {{ (total_history // total_users) if total_users > 0 else 0 }}
+      </div>
     </div>
+
   </div>
 
-  <!-- Two column: Top Users & Top Conditions -->
-  <div class="two-col-grid">
-    <div class="admin-panel">
-      <div class="admin-panel-header">
-        <div class="admin-panel-title">Most Active Users</div>
-        <a href="{{ url_for('admin_users') }}" class="admin-btn admin-btn-primary" style="font-size:.75rem; padding:.3rem .7rem;">View All</a>
-      </div>
-      <div class="admin-panel-body">
-        {% if top_users %}
-        <ul class="top-list">
-          {% for u in top_users %}
-          <li>
-            <span class="top-list-name">{{ u.username }}</span>
-            <span class="top-list-count">{{ u.cnt }} searches</span>
-          </li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <div class="admin-empty">
-          <div class="admin-empty-icon">👥</div>
-          <p>No data yet.</p>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="admin-panel">
-      <div class="admin-panel-header">
-        <div class="admin-panel-title">Top Conditions</div>
-        <a href="{{ url_for('admin_history') }}" class="admin-btn admin-btn-primary" style="font-size:.75rem; padding:.3rem .7rem;">View All</a>
-      </div>
-      <div class="admin-panel-body">
-        {% if top_conditions %}
-        <ul class="top-list">
-          {% for c in top_conditions %}
-          <li>
-            <span class="top-list-name">{{ c.problem | title }}</span>
-            <span class="top-list-count">{{ c.cnt }} searches</span>
-          </li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <div class="admin-empty">
-          <div class="admin-empty-icon">💊</div>
-          <p>No data yet.</p>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <!-- Quick Actions -->
+  <!-- QUICK ACTIONS -->
   <div class="admin-panel">
     <div class="admin-panel-header">
       <div class="admin-panel-title">Quick Actions</div>
     </div>
+
     <div class="admin-panel-body" style="display:flex; gap:1rem; flex-wrap:wrap;">
-      <a href="{{ url_for('admin_users') }}"             class="admin-btn admin-btn-primary">👥 Manage Users</a>
-      <a href="{{ url_for('admin_history') }}"           class="admin-btn admin-btn-primary">📋 View All History</a>
-      <a href="{{ url_for('admin_download_users') }}"    class="admin-btn admin-btn-download">⬇ Download Users CSV</a>
-      <a href="{{ url_for('admin_download_history') }}"  class="admin-btn admin-btn-download">⬇ Download History CSV</a>
+      <a href="{{ url_for('admin_users') }}" class="admin-btn admin-btn-primary">👥 Manage Users</a>
+      <a href="{{ url_for('admin_history') }}" class="admin-btn admin-btn-primary">📋 History</a>
+      <a href="{{ url_for('admin_download_users') }}" class="admin-btn admin-btn-download">⬇ Users CSV</a>
+      <a href="{{ url_for('admin_download_history') }}" class="admin-btn admin-btn-download">⬇ History CSV</a>
+    </div>
+  </div>
+
+  <!-- USERS TABLE -->
+  <div class="admin-panel">
+    <div class="admin-panel-header">
+      <div class="admin-panel-title">All Users</div>
+    </div>
+
+    <div class="admin-panel-body">
+      <table class="admin-table">
+
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Username</th>
+            <th>Email</th>
+            <th>Created At</th>
+            <th>Password Hash</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for user in users %}
+          <tr>
+            <td>{{ user.id }}</td>
+            <td>{{ user.username }}</td>
+            <td>{{ user.email }}</td>
+            <td>{{ user.created_at }}</td>
+            <td>••••••••</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+
+      </table>
     </div>
   </div>
 

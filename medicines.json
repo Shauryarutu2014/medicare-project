@@ -4,8 +4,7 @@
         "symptoms": ["Restlessness", "Fast heartbeat", "Poor sleep"],
         "suggestions": ["Breathing exercises", "Meditation", "Talk to someone"]
     },
-    {
-        "problem": "Cold / Flu",
+    {   "problem": "Cold / Flu",
         "symptoms": ["Runny nose", "Cough", "Fever"],
         "suggestions": ["Rest", "Warm fluids", "Steam inhalation"]
     },
@@ -1259,4 +1258,4 @@
         "symptoms": ["Severe vision loss at birth, nystagmus"],
         "suggestions": ["Gene therapy"]
     }
-  ]
+]

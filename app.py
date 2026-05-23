@@ -5,9 +5,10 @@ import csv
 import io
 from datetime import datetime
 from functools import wraps
-
 import psycopg2
 import psycopg2.extras
+from psycopg2.extras import RealDictCursor
+
 from flask import (
     Flask, render_template, request, redirect, url_for,
     session, flash, Response
@@ -40,10 +41,13 @@ ADMIN_DISPLAY = {
 
 
 def get_db():
-    return psycopg2.connect(
-        DATABASE_URL,
-        sslmode="require"
+    conn = psycopg2.connect(
+        host="localhost",
+        database="medicare_db",
+        user="postgres",
+        password="SNG@2014"
     )
+    return conn
 
 def init_db():
     conn = get_db()
@@ -65,7 +69,6 @@ def init_db():
             problem VARCHAR(255),
             suggestions TEXT,
             symptoms TEXT,
-            advice TEXT,
             searched_at TIMESTAMP DEFAULT NOW()
         )
     """)
@@ -569,8 +572,6 @@ def dashboard():
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute("SELECT COUNT(*) as cnt FROM history WHERE user_id = %s", (session["user_id"],))
         history_count = cur.fetchone()["cnt"]
-        cur.execute("SELECT COUNT(*) as cnt FROM users")
-        total_users = cur.fetchone()["cnt"]
         cur.execute(
             "SELECT * FROM history WHERE user_id = %s ORDER BY searched_at DESC LIMIT 3",
             (session["user_id"],)
@@ -586,12 +587,10 @@ def dashboard():
         "dashboard.html",
         username=session["username"],
         history_count=history_count,
-        total_users=total_users,
         recent=recent,
         tips_count=len(HEALTH_TIPS),
         yoga_count=len(YOGA_POSES)
     )
-
 
 @app.route("/health-tips")
 @login_required
@@ -608,61 +607,1337 @@ def yoga():
 @app.route("/medicine", methods=["GET", "POST"])
 @login_required
 def medicine():
+    medicines = [
+    {
+        "problem": "Stress / Anxiety",
+        "symptoms": ["Restlessness", "Fast heartbeat", "Poor sleep"],
+        "suggestions": ["Breathing exercises", "Meditation", "Talk to someone"]
+    },
+    {
+    "problem": "Cold / Flu",
+    "symptoms": ["Runny nose", "Cough", "Fever"],
+    "suggestions": ["Rest", "Warm fluids", "Steam inhalation"]
+    },
+    {
+        "problem": "Headache",
+        "symptoms": ["Head pain", "Sensitivity to light", "Tiredness"],
+        "suggestions": ["Rest in dark room", "Hydration", "Pain relief medicine"]
+    },
+    {
+        "problem": "Stomach Issues",
+        "symptoms": ["Stomach pain", "Bloating", "Nausea"],
+        "suggestions": ["Light diet", "ORS", "Avoid spicy food"]
+    },
+    {
+        "problem": "Fatigue",
+        "symptoms": ["Tiredness", "Low energy", "Sleepiness"],
+        "suggestions": ["Proper sleep", "Balanced diet", "Hydration"]
+    },
+    {
+        "problem": "Allergy",
+        "symptoms": ["Sneezing", "Itchy eyes", "Skin rash"],
+        "suggestions": ["Avoid allergens", "Antihistamines", "Clean environment"]
+    },
+    {
+        "problem": "Diabetes Symptoms",
+        "symptoms": ["Frequent urination", "Thirst", "Fatigue"],
+        "suggestions": ["Healthy diet", "Exercise", "Sugar control"]
+    },
+    {
+        "problem": "Blood Pressure",
+        "symptoms": ["Dizziness", "Headache", "Chest discomfort"],
+        "suggestions": ["Reduce salt", "Exercise", "Medication"]
+    },
+    {
+        "problem": "Migraine",
+        "symptoms": ["Severe headache", "Nausea", "Light sensitivity"],
+        "suggestions": ["Rest", "Cold compress", "Medication"]
+    },
+    {
+        "problem": "Skin Infection",
+        "symptoms": ["Redness", "Itching", "Swelling"],
+        "suggestions": ["Clean area", "Antiseptic cream", "Doctor consultation"]
+    },
+    {
+        "problem": "gout",
+        "symptoms": ["Intense joint pain (often big toe)", "Lingering discomfort", "Inflammation and redness",
+                     "Limited range of motion"],
+        "suggestions": ["Colchicine (0.6mg)", "Allopurinol (100mg)", "Indomethacin (50mg)", "Naproxen (500mg)"]
+    },
+    {
+        "problem": "vertigo",
+        "symptoms": ["Spinning sensation", "Dizziness", "Balance problems", "Nausea", "Vomiting", "Lightheadedness"],
+        "suggestions": ["Meclizine (25mg)", "Betahistine (8-16mg)", "Dimenhydrinate (50mg)"]
+    },
+    {
+        "problem": "hemorrhoids",
+        "symptoms": ["Rectal bleeding", "Itching or irritation", "Pain or discomfort", "Swelling around the anus"],
+        "suggestions": ["Hydrocortisone suppository", "Witch hazel pads", "Lidocaine cream",
+                        "Stool softeners (Docusate sodium)"]
+    },
+    {
+        "problem": "sinusitis",
+        "symptoms": ["Facial pressure and pain", "Congestion", "Thick nasal discharge", "Reduced sense of smell",
+                     "Ear pressure"],
+        "suggestions": ["Fluticasone nasal spray", "Pseudoephedrine (60mg)", "Saline nasal irrigation", "Guaifenesin"]
+    },
+    {
+        "problem": "anemia",
+        "symptoms": ["Fatigue", "Weakness", "Pale skin", "Chest pain", "Cold hands and feet", "Shortness of breath"],
+        "suggestions": ["Ferrous Sulfate (325mg)", "Ferrous Gluconate", "Vitamin B12 supplements", "Folic Acid"]
+    },
+    {
+        "problem": "tinnitus",
+        "symptoms": ["Ringing in ears", "Buzzing, hissing, or roaring sound", "Hearing loss (sometimes)"],
+        "suggestions": ["Ginkgo Biloba (natural)", "Magnesium supplements", "Zinc supplements"]
+    },
+    {
+        "problem": "sciatica",
+        "symptoms": ["Pain radiating from lower back to leg", "Numbness or tingling in foot", "Muscle weakness"],
+        "suggestions": ["Ibuprofen (400mg)", "Gabapentin (300mg - prescription)", "Diclofenac topical"]
+    },
+    {
+        "problem": "heartburn",
+        "symptoms": ["Burning chest pain", "Sour taste in mouth", "Difficulty swallowing", "Regurgitation"],
+        "suggestions": ["Famotidine (20mg)", "Magnesium Hydroxide", "Calcium Carbonate", "Esomeprazole"]
+    },
+    {
+        "problem": "conjunctivitis",
+        "symptoms": ["Redness in white of eye", "Increased tears", "Thick yellow discharge", "Gritty feeling in eyes"],
+        "suggestions": ["Antibiotic eye drops (as prescribed)", "Lubricating eye drops", "Antihistamine drops"]
+    },
+    {
+        "problem": "canker sores",
+        "symptoms": ["Small painful ulcers inside mouth", "Red border around white/yellow center",
+                     "Tingling sensation before sore appears"],
+        "suggestions": ["Benzocaine oral gel", "Hydrogen peroxide rinse", "Saltwater gargle",
+                        "Triamcinolone dental paste"]
+    },
+    {
+        "problem": "heat exhaustion",
+        "symptoms": ["Heavy sweating", "Rapid pulse", "Muscle cramps", "Headache", "Nausea", "Dizziness"],
+        "suggestions": ["Electrolyte replenishment fluids", "Cool water"]
+    },
+    {
+        "problem": "ingrown toenail",
+        "symptoms": ["Pain and tenderness at nail edge", "Swelling", "Redness", "Possible infection/pus"],
+        "suggestions": ["Topical antibiotic ointment", "Pain relief (Ibuprofen)"]
+    },
+    {
+        "problem": "tinea pedis (athlete's foot)",
+        "symptoms": ["Itchy, scaly rash between toes", "Cracked skin", "Blisters", "Burning sensation"],
+        "suggestions": ["Terbinafine cream", "Clotrimazole cream", "Miconazole powder"]
+    },
+    {
+        "problem": "dysmenorrhea (menstrual cramps)",
+        "symptoms": ["Throbbing/cramping pain in lower abdomen", "Lower back pain", "Radiating pain to thighs",
+                     "Nausea"],
+        "suggestions": ["Ibuprofen (400mg)", "Naproxen (250mg)", "Heat patch"]
+    },
+    {
+        "problem": "frostbite",
+        "symptoms": ["Cold, prickling feeling", "Numbness", "Red, white, or gray skin", "Hard or waxy skin"],
+        "suggestions": ["Pain relief (Ibuprofen)"]
+    },
+    {
+        "problem": "laryngitis",
+        "symptoms": ["Hoarseness", "Weak voice", "Tickling throat", "Dry throat", "Sore throat"],
+        "suggestions": ["Throat lozenges", "Acetaminophen"]
+    },
+    {
+        "problem": "scabies",
+        "symptoms": ["Intense itching (worse at night)", "Thin burrow tracks on skin", "Small blisters or bumps",
+                     "Rash"],
+        "suggestions": ["Permethrin cream (5%)", "Crotamiton cream", "Antihistamines (for itching)"]
+    },
+    {
+        "problem": "otitis media (ear infection)",
+        "symptoms": ["Ear pain", "Difficulty hearing", "Fluid drainage from ear", "Fever", "Irritability in children"],
+        "suggestions": ["Amoxicillin (if bacterial)", "Acetaminophen (for pain)", "Decongestants"]
+    },
+    {
+        "problem": "hemiplegia",
+        "symptoms": ["Paralysis on one side of the body", "Muscle stiffness", "Difficulty walking",
+                     "Loss of fine motor skills"],
+        "suggestions": ["Physical therapy", "Occupational therapy", "Muscle relaxants (Baclofen)"]
+    },
+    {
+        "problem": "epistaxis (nosebleed)",
+        "symptoms": ["Bleeding from one or both nostrils", "Blood in the back of the throat"],
+        "suggestions": ["Topical decongestant spray (short term)", "Saline nasal spray"]
+    },
+    {
+        "problem": "celiac disease",
+        "symptoms": ["Chronic diarrhea", "Abdominal pain", "Bloating", "Fatigue", "Weight loss", "Anemia"],
+        "suggestions": ["Strict gluten-free diet", "Vitamin/Mineral supplements"]
+    },
+    {
+        "problem": "plantar fasciitis",
+        "symptoms": ["Stabbing heel pain (usually first steps in morning)", "Stiffness in the arch of the foot"],
+        "suggestions": ["Ibuprofen", "Orthotic shoe inserts", "Night splints"]
+    },
+    {
+        "problem": "hypoglycemia",
+        "symptoms": ["Shakiness", "Sweating", "Hunger", "Confusion", "Fast heartbeat", "Dizziness"],
+        "suggestions": ["Glucose tablets", "Fruit juice or regular soda (fast-acting sugar)"]
+    },
+    {
+        "problem": "tendonitis",
+        "symptoms": ["Dull ache in the area of a tendon", "Mild swelling", "Tenderness", "Pain with movement"],
+        "suggestions": ["Naproxen", "Diclofenac topical gel"]
+    },
+    {
+        "problem": "bronchitis",
+        "symptoms": ["Persistent cough (mucus-producing)", "Shortness of breath", "Chest soreness", "Low-grade fever",
+                     "Chills"],
+        "suggestions": ["Guaifenesin (expectorant)", "Dextromethorphan (cough suppressant)", "Hydration"]
+    },
+    {
+        "problem": "osteoporosis",
+        "symptoms": ["Back pain", "Loss of height over time", "Stooped posture",
+                     "Bone fractures occurring more easily than expected"],
+        "suggestions": ["Calcium supplements", "Vitamin D3", "Bisphosphonates (e.g., Alendronate)"]
+    },
+    {
+        "problem": "urinary incontinence",
+        "symptoms": ["Leaking urine during physical activity (stress)", "Sudden, strong urge to urinate",
+                     "Frequent nocturnal urination"],
+        "suggestions": ["Oxybutynin (anticholinergic)", "Mirabegron"]
+    },
+    {
+        "problem": "gastritis",
+        "symptoms": ["Gnawing or burning ache in upper abdomen", "Nausea", "Vomiting", "Feeling of fullness"],
+        "suggestions": ["Antacids", "H2 blockers (Famotidine)", "Proton pump inhibitors (Omeprazole)"]
+    },
+    {
+        "problem": "shingles",
+        "symptoms": ["Painful burning or tingling skin", "Red rash appearing a few days later", "Fluid-filled blisters",
+                     "Fever", "Headache"],
+        "suggestions": ["Acyclovir (antiviral)", "Valacyclovir", "Calamine lotion", "Lidocaine patches"]
+    },
+    {
+        "problem": "hypothyroidism",
+        "symptoms": ["Fatigue", "Increased sensitivity to cold", "Weight gain", "Dry skin", "Thinning hair",
+                     "Muscle weakness"],
+        "suggestions": ["Levothyroxine (synthetic hormone)"]
+    },
+    {
+        "problem": "angina",
+        "symptoms": ["Chest pain/pressure", "Discomfort spreading to arms, neck, or jaw", "Shortness of breath",
+                     "Sweating"],
+        "suggestions": ["Nitroglycerin (sublingual tablets or spray)", "Aspirin"]
+    },
+    {
+        "problem": "psoriasis",
+        "symptoms": ["Red patches of skin covered with thick, silvery scales", "Small scaling spots",
+                     "Dry, cracked skin that may bleed", "Itching or burning"],
+        "suggestions": ["Topical corticosteroids", "Salicylic acid", "Vitamin D analogues", "Phototherapy"]
+    },
+    {
+        "problem": "adenitis",
+        "symptoms": ["Swollen lymph nodes", "Tenderness in the neck or armpit", "Fever", "Redness"],
+        "suggestions": ["Warm compress", "Ibuprofen", "Antibiotics (if bacterial)"]
+    },
+    {
+        "problem": "appendicitis",
+        "symptoms": ["Sudden pain in lower right abdomen", "Nausea", "Vomiting", "Loss of appetite", "Low fever"],
+        "suggestions": ["Surgery (Appendectomy)"]
+    },
+    {
+        "problem": "bursitis",
+        "symptoms": ["Joint pain and stiffness", "Swelling", "Redness", "Warmth"],
+        "suggestions": ["Rest", "Ice", "Ibuprofen", "Naproxen"]
+    },
+    {
+        "problem": "cataracts",
+        "symptoms": ["Cloudy or blurry vision", "Difficulty seeing at night", "Sensitivity to light/glare",
+                     "Halos around lights"],
+        "suggestions": ["Prescription glasses (early)", "Surgery (later stage)"]
+    },
+    {
+        "problem": "dementia",
+        "symptoms": ["Memory loss", "Difficulty communicating", "Disorientation", "Changes in personality"],
+        "suggestions": ["Donepezil", "Memantine", "Cognitive therapy"]
+    },
+    {
+        "problem": "eczema",
+        "symptoms": ["Itchy skin", "Dry, cracked patches", "Small, raised bumps", "Skin thickening"],
+        "suggestions": ["Topical corticosteroids", "Moisturizers", "Antihistamines"]
+    },
+    {
+        "problem": "fibromyalgia",
+        "symptoms": ["Widespread musculoskeletal pain", "Fatigue", "Sleep disturbances",
+                     "Cognitive difficulties (fibro fog)"],
+        "suggestions": ["Duloxetine", "Pregabalin", "Low-impact exercise"]
+    },
+    {
+        "problem": "glaucoma",
+        "symptoms": ["Gradual loss of peripheral vision", "Tunnel vision", "Severe eye pain (acute)", "Blurred vision"],
+        "suggestions": ["Prostaglandin analogs (eye drops)", "Beta-blocker eye drops"]
+    },
+    {
+        "problem": "hernia",
+        "symptoms": ["Bulge in abdominal wall or groin", "Pain when lifting", "Dull ache", "Feeling of fullness"],
+        "suggestions": ["Support garments", "Surgery (for repair)"]
+    },
+    {
+        "problem": "influenza",
+        "symptoms": ["High fever", "Body aches", "Exhaustion", "Dry cough", "Sore throat", "Runny nose"],
+        "suggestions": ["Oseltamivir (if early)", "Paracetamol", "Fluids"]
+    },
+    {
+        "problem": "jaundice",
+        "symptoms": ["Yellowing of skin and eyes", "Dark urine", "Pale stools", "Fatigue"],
+        "suggestions": ["Treat the underlying liver condition"]
+    },
+    {
+        "problem": "kidney stones",
+        "symptoms": ["Severe pain in back/side", "Pain during urination", "Blood in urine", "Nausea"],
+        "suggestions": ["Tamsulosin", "Painkillers (NSAIDs)", "Increased fluid intake"]
+    },
+    {
+        "problem": "lupus",
+        "symptoms": ["Butterfly-shaped rash on face", "Joint pain", "Fatigue", "Fever", "Sensitivity to sun"],
+        "suggestions": ["Hydroxychloroquine", "Corticosteroids", "Immunosuppressants"]
+    },
+    {
+        "problem": "meningitis",
+        "symptoms": ["Sudden high fever", "Stiff neck", "Severe headache", "Sensitivity to light", "Confusion"],
+        "suggestions": ["Antibiotics (urgent)", "IV fluids"]
+    },
+    {
+        "problem": "narcolepsy",
+        "symptoms": ["Excessive daytime sleepiness", "Sudden muscle weakness (cataplexy)", "Sleep paralysis"],
+        "suggestions": ["Modafinil", "Stimulants", "Antidepressants"]
+    },
+    {
+        "problem": "obesity",
+        "symptoms": ["Excessive body fat", "Difficulty breathing", "Joint pain", "Sleep apnea"],
+        "suggestions": ["Orlistat", "Liraglutide", "Lifestyle counseling"]
+    },
+    {
+        "problem": "pharyngitis",
+        "symptoms": ["Sore throat", "Difficulty swallowing", "Swollen glands", "Red tonsils"],
+        "suggestions": ["Salt water gargle", "Lozenges", "Antibiotics (only if bacterial)"]
+    },
+    {
+        "problem": "quinsy",
+        "symptoms": ["Severe throat pain (one-sided)", "Muffled voice", "Swelling", "Difficulty opening mouth"],
+        "suggestions": ["Surgical drainage", "Antibiotics (IV)"]
+    },
+    {
+        "problem": "rhinitis",
+        "symptoms": ["Sneezing", "Runny nose", "Congestion", "Itchy throat/nose"],
+        "suggestions": ["Intranasal corticosteroids", "Antihistamines"]
+    },
+    {
+        "problem": "scoliosis",
+        "symptoms": ["Uneven shoulders", "Prominent shoulder blade", "Uneven waist", "Leaning to one side"],
+        "suggestions": ["Bracing", "Physical therapy", "Surgery (severe cases)"]
+    },
+    {
+        "problem": "alopecia",
+        "symptoms": ["Patchy hair loss", "Sudden thinning", "Smooth, coin-sized patches"],
+        "suggestions": ["Minoxidil", "Corticosteroid injections", "Anthralin"]
+    },
+    {
+        "problem": "blepharitis",
+        "symptoms": ["Red, swollen eyelids", "Crusty debris at base of eyelashes", "Itchy eyes", "Gritty sensation"],
+        "suggestions": ["Warm compresses", "Eyelid scrubs", "Antibiotic ointment"]
+    },
+    {
+        "problem": "carpal tunnel syndrome",
+        "symptoms": ["Numbness in thumb and fingers", "Tingling", "Weakness in hand", "Shock-like sensations"],
+        "suggestions": ["Wrist splinting", "NSAIDs", "Corticosteroid injections"]
+    },
+    {
+        "problem": "diverticulitis",
+        "symptoms": ["Severe abdominal pain (lower left)", "Fever", "Nausea", "Change in bowel habits"],
+        "suggestions": ["Antibiotics (oral)", "Liquid diet (acute phase)", "Pain management"]
+    },
+    {
+        "problem": "emphysema",
+        "symptoms": ["Shortness of breath", "Chronic cough", "Wheezing", "Chest tightness"],
+        "suggestions": ["Inhaled bronchodilators", "Inhaled steroids", "Supplemental oxygen"]
+    },
+    {
+        "problem": "folliculitis",
+        "symptoms": ["Small red bumps around hair follicles", "Pus-filled blisters", "Itching", "Tenderness"],
+        "suggestions": ["Antibacterial soap", "Warm compresses", "Topical mupirocin"]
+    },
+    {
+        "problem": "gingivitis",
+        "symptoms": ["Swollen gums", "Gums that bleed easily", "Bad breath", "Receding gums"],
+        "suggestions": ["Antiseptic mouthwash", "Professional dental cleaning"]
+    },
+    {
+        "problem": "hyperthyroidism",
+        "symptoms": ["Unexplained weight loss", "Rapid heartbeat (tachycardia)", "Anxiety",
+                     "Increased sensitivity to heat"],
+        "suggestions": ["Methimazole", "Propylthiouracil", "Beta-blockers"]
+    },
+    {
+        "problem": "impetigo",
+        "symptoms": ["Red sores that break open", "Yellow-brown crusts", "Itchy rash", "Fluid-filled blisters"],
+        "suggestions": ["Topical antibiotic cream (e.g., Mupirocin)", "Oral antibiotics"]
+    },
+    {
+        "problem": "keratosis pilaris",
+        "symptoms": ["Small, rough bumps (chicken skin)", "Dry, sandpaper-like skin", "Minor redness"],
+        "suggestions": ["Exfoliating creams (lactic acid)", "Urea-based lotions"]
+    },
+    {
+        "problem": "lichen planus",
+        "symptoms": ["Purple, itchy, flat-topped bumps", "Lacy white patches in mouth", "Ridged nails"],
+        "suggestions": ["Topical steroids", "Oral antihistamines", "Light therapy"]
+    },
+    {
+        "problem": "myasthenia gravis",
+        "symptoms": ["Drooping eyelids", "Double vision", "Difficulty swallowing", "Fatigue in limb muscles"],
+        "suggestions": ["Pyridostigmine", "Immunosuppressants"]
+    },
+    {
+        "problem": "nephritis",
+        "symptoms": ["Blood in urine", "Swelling (edema) in face/legs", "High blood pressure", "Foamy urine"],
+        "suggestions": ["Blood pressure medication (ACE inhibitors)", "Diuretics"]
+    },
+    {
+        "problem": "osteomyelitis",
+        "symptoms": ["Bone pain", "Fever", "Swelling/redness over the bone", "Fatigue"],
+        "suggestions": ["Long-term IV antibiotics", "Surgical debridement"]
+    },
+    {
+        "problem": "polycystic ovary syndrome (PCOS)",
+        "symptoms": ["Irregular periods", "Excess hair growth (hirsutism)", "Acne", "Weight gain"],
+        "suggestions": ["Metformin", "Birth control pills", "Anti-androgens"]
+    },
+    {
+        "problem": "raynaud's disease",
+        "symptoms": ["Cold fingers/toes", "Color changes in response to cold/stress", "Numbness", "Throbbing pain"],
+        "suggestions": ["Calcium channel blockers", "Vasodilator creams"]
+    },
+    {
+        "problem": "sarcoidosis",
+        "symptoms": ["Persistent dry cough", "Shortness of breath", "Swollen lymph nodes", "Fatigue", "Skin lesions"],
+        "suggestions": ["Corticosteroids", "Immunosuppressants"]
+    },
+    {
+        "problem": "trigeminal neuralgia",
+        "symptoms": ["Sudden, severe, electric-shock-like face pain", "Triggered by touch or chewing"],
+        "suggestions": ["Carbamazepine", "Gabapentin", "Phenytoin"]
+    },
+    {
+        "problem": "ulcerative colitis",
+        "symptoms": ["Bloody diarrhea", "Abdominal pain", "Urgent bowel movements", "Weight loss"],
+        "suggestions": ["Aminosalicylates", "Corticosteroids", "Immunomodulators"]
+    },
+    {
+        "problem": "vitiligo",
+        "symptoms": ["Loss of skin color in blotches", "Premature whitening of hair", "Loss of color in mouth tissues"],
+        "suggestions": ["Topical corticosteroids", "Light therapy (PUVA)", "Depigmentation"]
+    },
+    {
+        "problem": "amyotrophic lateral sclerosis (ALS)",
+        "symptoms": ["Muscle weakness", "Twitching (fasciculations)", "Difficulty speaking or swallowing",
+                     "Progressive loss of motor control"],
+        "suggestions": ["Riluzole", "Edaravone", "Physical therapy"]
+    },
+    {
+        "problem": "babesiosis",
+        "symptoms": ["Fever", "Fatigue", "Hemolytic anemia", "Muscle aches"],
+        "suggestions": ["Atovaquone", "Azithromycin"]
+    },
+    {
+        "problem": "colitis (microscopic)",
+        "symptoms": ["Chronic watery diarrhea", "Abdominal pain", "Weight loss"],
+        "suggestions": ["Budesonide", "Antidiarrheal medications"]
+    },
+    {
+        "problem": "delirium",
+        "symptoms": ["Sudden confusion", "Disorientation", "Inability to focus", "Altered sleep-wake cycle"],
+        "suggestions": ["Treat underlying cause (e.g., infection/medication review)",
+                        "Low-dose antipsychotics (if necessary)"]
+    },
+    {
+        "problem": "epididymitis",
+        "symptoms": ["Pain and swelling in the scrotum", "Fever", "Discharge from penis", "Painful urination"],
+        "suggestions": ["Ceftriaxone", "Doxycycline", "Scrotal support"]
+    },
+    {
+        "problem": "fracture (stress)",
+        "symptoms": ["Localized bone pain", "Swelling", "Pain during activity that stops with rest"],
+        "suggestions": ["Rest (no weight-bearing)", "Crutches", "Analgesics"]
+    },
 
-    medicines = load_medicines()
+
+{
+    "problem": "moebius syndrome",
+    "symptoms": ["Facial paralysis", "Inability to move eyes laterally"],
+    "suggestions": ["Speech therapy", "Reconstructive surgery"]
+},
+{
+    "problem": "noonan syndrome",
+    "symptoms": ["Short stature", "Heart defects", "Distinctive facial features"],
+    "suggestions": ["Growth hormone", "Cardiac monitoring"]
+},
+{
+    "problem": "osmotic demyelination syndrome",
+    "symptoms": ["Confusion", "Difficulty speaking", "Motor impairment"],
+    "suggestions": ["Correction of electrolyte balance"]
+},
+{
+    "problem": "paroxysmal nocturnal hemoglobinuria",
+    "symptoms": ["Dark urine", "Anemia", "Thrombosis"],
+    "suggestions": ["Eculizumab", "Blood transfusions"]
+},
+{
+    "problem": "quer'vain disease (thyroid)",
+    "symptoms": ["Painful, tender thyroid gland"],
+    "suggestions": ["NSAIDs", "Beta-blockers"]
+},
+{
+    "problem": "reye syndrome",
+    "symptoms": ["Confusion", "Seizures", "Vomiting"],
+    "suggestions": ["Intravenous fluids", "Glucose (Emergency)"]
+},
+{
+    "problem": "stiff-man syndrome",
+    "symptoms": ["Progressive muscle rigidity"],
+    "suggestions": ["Diazepam", "Physical therapy"]
+},
+{
+    "problem": "thalamic pain syndrome",
+    "symptoms": ["Severe pain", "Temperature sensitivity"],
+    "suggestions": ["Antidepressants", "Anticonvulsants"]
+},
+{
+    "problem": "uncharacterized inflammatory bowel disease",
+    "symptoms": ["Abdominal pain", "Diarrhea", "Bleeding"],
+    "suggestions": ["Mesalamine", "Immunomodulators"]
+},
+{
+    "problem": "vici syndrome",
+    "symptoms": ["Callosal agenesis", "Cataracts", "Cardiomyopathy"],
+    "suggestions": ["Multidisciplinary supportive care"]
+},
+{
+    "problem": "wiskott-aldrich syndrome",
+    "symptoms": ["Eczema", "Low platelets", "Immunodeficiency"],
+    "suggestions": ["Stem cell transplant", "IVIG"]
+},
+{
+    "problem": "x-linked adrenoleukodystrophy",
+    "symptoms": ["Behavioral changes", "Vision loss", "Muscle weakness"],
+    "suggestions": ["Lorenzo's oil", "Hematopoietic cell transplant"]
+},
+{
+    "problem": "yellow nail syndrome",
+    "symptoms": ["Yellow nails", "Lymphedema", "Respiratory issues"],
+    "suggestions": ["Diuretics", "Vitamin E"]
+},
+{
+    "problem": "zieve syndrome",
+    "symptoms": ["Hemolytic anemia", "Jaundice", "Hyperlipidemia"],
+    "suggestions": ["Abstinence from alcohol"]
+},
+{
+    "problem": "alport syndrome",
+    "symptoms": ["Kidney failure", "Hearing loss", "Eye issues"],
+    "suggestions": ["ACE inhibitors", "Kidney transplant"]
+},
+{
+    "problem": "boutonneuse fever",
+    "symptoms": ["Fever", "Rash", "Black spot at bite site"],
+    "suggestions": ["Doxycycline"]
+},
+{
+    "problem": "capillaritis",
+    "symptoms": ["Reddish-brown pinpoint rash"],
+    "suggestions": ["Topical steroids", "Compression stockings"]
+},
+{
+    "problem": "dhat syndrome",
+    "symptoms": ["Anxiety", "Fatigue", "Sexual preoccupation"],
+    "suggestions": ["Counseling", "Psychotherapy"]
+},
+{
+    "problem": "adenoid hypertrophy",
+    "symptoms": ["Mouth breathing", "Snoring", "Recurrent ear infections"],
+    "suggestions": ["Adenoidectomy", "Nasal steroid sprays"]
+},
+{
+    "problem": "bicornuate uterus",
+    "symptoms": ["Recurrent miscarriage", "Preterm labor"],
+    "suggestions": ["Surgical correction (if indicated)", "Close monitoring"]
+},
+{
+    "problem": "campomelic dysplasia",
+    "symptoms": ["Bowed long bones", "Bell-shaped chest", "Respiratory distress"],
+    "suggestions": ["Supportive respiratory care"]
+},
+{
+    "problem": "duane retraction syndrome",
+    "symptoms": ["Limited eye movement", "Eyeball retraction"],
+    "suggestions": ["Strabismus surgery"]
+},
+{
+    "problem": "erwinia infection",
+    "symptoms": ["Rare opportunistic infection", "Localized inflammation"],
+    "suggestions": ["Appropriate antibiotic therapy"]
+},
+{
+    "problem": "filarial lymphedema",
+    "symptoms": ["Severe swelling of limbs (elephantiasis)"],
+    "suggestions": ["Antiparasitic meds", "Compression therapy"]
+},
+{
+    "problem": "gardner syndrome",
+    "symptoms": ["Multiple intestinal polyps", "Osteomas", "Skin tumors"],
+    "suggestions": ["Regular colonoscopy", "Prophylactic surgery"]
+},
+{
+    "problem": "hereditary spherocytosis",
+    "symptoms": ["Anemia", "Jaundice", "Enlarged spleen"],
+    "suggestions": ["Folic acid", "Splenectomy"]
+},
+{
+    "problem": "icthyosis vulgaris",
+    "symptoms": ["Dry, scaly skin on extremities"],
+    "suggestions": ["Moisturizing creams", "Keratolytic agents"]
+},
+{
+    "problem": "junctural tachycardia",
+    "symptoms": ["Palpitations", "Lightheadedness", "Rapid heart rate"],
+    "suggestions": ["Ablation", "Anti-arrhythmic drugs"]
+},
+{
+    "problem": "keratoacanthoma",
+    "symptoms": ["Rapidly growing, dome-shaped skin lesion"],
+    "suggestions": ["Surgical excision", "Cryotherapy"]
+},
+{
+    "problem": "loiasis",
+    "symptoms": ["Eye worm migration", "Localized swelling (Calabar swellings)"],
+    "suggestions": ["Diethylcarbamazine"]
+},
+{
+    "problem": "macrodactyly",
+    "symptoms": ["Abnormally large fingers or toes"],
+    "suggestions": ["Epiphysiodesis", "Reconstructive surgery"]
+},
+{
+    "problem": "necrotizing fasciitis",
+    "symptoms": ["Severe pain", "Rapidly spreading skin discoloration"],
+    "suggestions": ["Surgical debridement", "IV antibiotics (Emergency)"]
+},
+{
+    "problem": "oculopharyngeal muscular dystrophy",
+    "symptoms": ["Drooping eyelids", "Swallowing difficulties"],
+    "suggestions": ["Eyelid surgery", "Swallowing therapy"]
+},
+{
+    "problem": "pentalogy of cantrell",
+    "symptoms": ["Congenital defects of heart/diaphragm/abdominal wall"],
+    "suggestions": ["Complex surgical reconstruction"]
+},
+{
+    "problem": "quer'vain syndrome (de Quervain's)",
+    "symptoms": ["Pain at the base of the thumb and wrist"],
+    "suggestions": ["Splinting", "Corticosteroid injections"]
+},
+{
+    "problem": "rachischisis",
+    "symptoms": ["Severe neural tube defect involving exposed spinal cord"],
+    "suggestions": ["Surgical closure", "Supportive care"]
+},
+{
+    "problem": "sotos syndrome",
+    "symptoms": ["Rapid childhood growth", "Large head", "Learning delay"],
+    "suggestions": ["Developmental support"]
+},
+{
+    "problem": "trench mouth (Vincent's angina)",
+    "symptoms": ["Painful, bleeding gums", "Foul breath"],
+    "suggestions": ["Professional cleaning", "Antibiotics"]
+},
+{
+    "problem": "urorectal septum malformation sequence",
+    "symptoms": ["Incomplete separation of urogenital and anorectal tracts"],
+    "suggestions": ["Multiple staged surgical corrections"]
+},
+{
+    "problem": "van der woude syndrome",
+    "symptoms": ["Cleft lip/palate", "Lip pits"],
+    "suggestions": ["Surgical repair"]
+},
+{
+    "problem": "weill-marchesani syndrome",
+    "symptoms": ["Short stature", "Small spherical lenses (eyes)"],
+    "suggestions": ["Lens surgery", "Regular eye exams"]
+},
+{
+    "problem": "x-linked agammaglobulinemia",
+    "symptoms": ["Recurrent severe bacterial infections"],
+    "suggestions": ["Lifelong antibody replacement therapy"]
+},
+{
+    "problem": "y-linked deafness",
+    "symptoms": ["Hearing loss specifically passed through paternal line"],
+    "suggestions": ["Hearing aids", "Cochlear implants"]
+},
+{
+    "problem": "zuckerkandl organ tumor (Pheochromocytoma)",
+    "symptoms": ["High blood pressure", "Headache", "Palpitations"],
+    "suggestions": ["Surgical resection"]
+},
+{
+    "problem": "apoplexy",
+    "symptoms": ["Sudden loss of consciousness or paralysis"],
+    "suggestions": ["Acute stroke management protocols"]
+},
+{
+    "problem": "bronchiectasis",
+    "symptoms": ["Chronic cough", "Thick mucus", "Recurrent infections"],
+    "suggestions": ["Airway clearance", "Antibiotics"]
+},
+{
+    "problem": "chorioretinitis",
+    "symptoms": ["Inflammation of the choroid and retina", "Vision impairment"],
+    "suggestions": ["Corticosteroids", "Antivirals (if applicable)"]
+},
+{
+    "problem": "dermatitis herpetiformis",
+    "symptoms": ["Extremely itchy, blister-like rash"],
+    "suggestions": ["Dapsone", "Gluten-free diet"]
+},
+{
+    "problem": "gangrene",
+    "symptoms": ["Discoloration (black/blue)", "Loss of sensation", "Foul-smelling discharge",
+                 "Severe pain followed by numbness"],
+    "suggestions": ["Surgical debridement", "Intravenous antibiotics"]
+},
+{
+    "problem": "hyperhidrosis",
+    "symptoms": ["Excessive sweating (palms, soles, underarms) without heat or exercise"],
+    "suggestions": ["Prescription antiperspirants (aluminum chloride)", "Iontophoresis", "Botox injections"]
+},
+{
+    "problem": "ichthyosis",
+    "symptoms": ["Dry, scaly skin", "Fish-scale appearance", "Cracked skin"],
+    "suggestions": ["Keratolytic creams (lactic acid)", "Moisturizers (petrolatum)"]
+},
+{
+    "problem": "kikuchi disease",
+    "symptoms": ["Fever", "Swollen neck lymph nodes", "Night sweats", "Skin rash"],
+    "suggestions": ["NSAIDs (for symptoms)", "Supportive care"]
+},
+{
+    "problem": "leukemia",
+    "symptoms": ["Fatigue", "Frequent infections", "Easy bruising or bleeding", "Bone pain"],
+    "suggestions": ["Chemotherapy", "Targeted therapy", "Stem cell transplant"]
+},
+{
+    "problem": "mastitis",
+    "symptoms": ["Breast pain/redness", "Warmth", "Flu-like symptoms (fever/chills)"],
+    "suggestions": ["Dicloxacillin (if infection)", "Warm compresses", "Frequent nursing/pumping"]
+},
+{
+    "problem": "narcolepsy (type 2)",
+    "symptoms": ["Excessive daytime sleepiness without cataplexy", "Sleep attacks"],
+    "suggestions": ["Modafinil", "Armodafinil"]
+},
+{
+    "problem": "optic neuritis",
+    "symptoms": ["Sudden vision loss in one eye", "Pain with eye movement", "Color vision deficiency"],
+    "suggestions": ["Intravenous corticosteroids"]
+},
+{
+    "problem": "prostatitis",
+    "symptoms": ["Painful ejaculation", "Pelvic pain", "Frequent urination", "Flu-like symptoms"],
+    "suggestions": ["Antibiotics (e.g., Ciprofloxacin)", "Alpha-blockers"]
+},
+{
+    "problem": "quadrantanopia",
+    "symptoms": ["Loss of vision in one-quarter of the visual field", "Difficulty reading"],
+    "suggestions": ["Treat underlying brain injury/stroke", "Vision therapy"]
+},
+{
+    "problem": "rhabdomyolysis",
+    "symptoms": ["Muscle pain", "Weakness", "Dark/tea-colored urine"],
+    "suggestions": ["Aggressive IV fluids"]
+},
+{
+    "problem": "syphilis",
+    "symptoms": ["Painless sores (chancres)", "Skin rashes", "Swollen lymph nodes"],
+    "suggestions": ["Penicillin G (intramuscular)"]
+},
+{
+    "problem": "torticollis",
+    "symptoms": ["Twisting of the neck", "Chin tilted to one side", "Headache", "Stiffness"],
+    "suggestions": ["Physical therapy", "Botulinum toxin (Botox)", "Muscle relaxants"]
+},
+{
+    "problem": "ulcer (peptic)",
+    "symptoms": ["Burning stomach pain", "Feeling of fullness/bloating", "Intolerance to fatty foods"],
+    "suggestions": ["PPIs (e.g., Omeprazole)", "Antibiotics (for H. pylori)"]
+},
+{
+    "problem": "actinic keratosis",
+    "symptoms": ["Rough, scaly patches on skin", "Small, crusty bump", "Itching or burning"],
+    "suggestions": ["Cryotherapy", "Topical 5-fluorouracil", "Imiquimod cream"]
+},
+{
+    "problem": "bacterial vaginosis",
+    "symptoms": ["Thin gray or white discharge", "Fishy odor", "Itching", "Burning during urination"],
+    "suggestions": ["Metronidazole (oral or gel)", "Clindamycin cream"]
+},
+{
+    "problem": "capsulitis",
+    "symptoms": ["Pain at base of toe/finger", "Swelling", "Feeling like walking on a pebble"],
+    "suggestions": ["Taping", "Orthotic inserts", "NSAIDs"]
+},
+{
+    "problem": "dermatomyositis",
+    "symptoms": ["Violet-colored rash on eyelids/knuckles", "Muscle weakness", "Difficulty swallowing"],
+    "suggestions": ["Corticosteroids", "Immunosuppressants (e.g., Methotrexate)"]
+},
+{
+    "problem": "erysipelas",
+    "symptoms": ["Red, swollen, painful rash", "Shiny skin", "Fever", "Chills"],
+    "suggestions": ["Penicillin or other antibiotics"]
+},
+{
+    "problem": "gastroparesis",
+    "symptoms": ["Nausea", "Vomiting", "Early fullness after eating", "Abdominal pain"],
+    "suggestions": ["Metoclopramide", "Erythromycin", "Dietary adjustments"]
+},
+{
+    "problem": "hemophilia",
+    "symptoms": ["Excessive bleeding from cuts", "Easy bruising", "Painful, swollen joints"],
+    "suggestions": ["Clotting factor replacement therapy", "Desmopressin"]
+},
+{
+    "problem": "interstitial cystitis",
+    "symptoms": ["Chronic pelvic pain", "Frequent urge to urinate", "Pain during intercourse"],
+    "suggestions": ["Pentosan polysulfate", "Antihistamines", "Bladder instillations"]
+},
+{
+    "problem": "juvenile rheumatoid arthritis",
+    "symptoms": ["Joint stiffness (especially morning)", "Joint swelling", "Fever", "Rash"],
+    "suggestions": ["NSAIDs", "DMARDs (e.g., Methotrexate)", "Biologic agents"]
+},
+{
+    "problem": "keloids",
+    "symptoms": ["Raised, rubbery scars", "Itchiness", "Tenderness over scar tissue"],
+    "suggestions": ["Silicone gel sheets", "Steroid injections", "Cryotherapy"]
+},
+{
+    "problem": "listeriosis",
+    "symptoms": ["Fever", "Muscle aches", "Nausea", "Diarrhea", "Stiff neck (in severe cases)"],
+    "suggestions": ["Intravenous antibiotics (e.g., Ampicillin)"]
+},
+{
+    "problem": "melanoma",
+    "symptoms": ["New or changing skin spot", "Asymmetrical border", "Irregular color", "Increasing size"],
+    "suggestions": ["Surgical excision", "Immunotherapy", "Targeted therapy"]
+},
+{
+    "problem": "neutropenia",
+    "symptoms": ["Frequent infections", "Mouth ulcers", "Skin abscesses", "Fever"],
+    "suggestions": ["G-CSF (Granulocyte-colony stimulating factor)", "Antibiotics"]
+},
+{
+    "problem": "orthostatic hypotension",
+    "symptoms": ["Dizziness upon standing", "Blurred vision", "Fainting"],
+    "suggestions": ["Fludrocortisone", "Midodrine"]
+},
+{
+    "problem": "polymyalgia rheumatica",
+    "symptoms": ["Pain and stiffness in shoulders/hips", "Morning stiffness >45 mins", "Weight loss"],
+    "suggestions": ["Low-dose corticosteroids"]
+},
+{
+    "problem": "q fever",
+    "symptoms": ["High fever", "Severe headache", "Fatigue", "Muscle pain", "Dry cough"],
+    "suggestions": ["Doxycycline"]
+},
+{
+    "problem": "restless legs syndrome",
+    "symptoms": ["Unpleasant crawling sensation in legs", "Urge to move legs", "Worse at night"],
+    "suggestions": ["Dopamine agonists", "Gabapentin", "Iron supplements"]
+},
+{
+    "problem": "scleroderma",
+    "symptoms": ["Hardening/tightening of skin", "Cold sensitivity (Raynaud's)", "Heartburn"],
+    "suggestions": ["Vasodilators", "Immunosuppressants", "PPIs for reflux"]
+},
+{
+    "problem": "tachyarrhythmia",
+    "symptoms": ["Rapid, irregular heartbeat", "Dizziness", "Shortness of breath", "Fainting"],
+    "suggestions": ["Beta-blockers", "Anti-arrhythmic drugs", "Catheter ablation"]
+},
+{
+    "problem": "urethritis",
+    "symptoms": ["Burning sensation when urinating", "Discharge from urethra", "Itching/irritation"],
+    "suggestions": ["Antibiotics (e.g., Azithromycin or Doxycycline)"]
+},
+{
+    "problem": "aphasia",
+    "symptoms": ["Difficulty speaking", "Trouble understanding speech", "Difficulty with reading/writing"],
+    "suggestions": ["Speech-language therapy", "Augmentative communication devices"]
+},
+{
+    "problem": "brucellosis",
+    "symptoms": ["Fever", "Sweating", "Malaise", "Joint pain", "Fatigue"],
+    "suggestions": ["Doxycycline", "Rifampin"]
+},
+{
+    "problem": "cryoglobulinemia",
+    "symptoms": ["Fatigue", "Joint pain", "Skin rashes", "Numbness in hands/feet"],
+    "suggestions": ["Immunosuppressants", "Plasmapheresis", "Treat underlying Hepatitis C"]
+},
+{
+    "problem": "dyshidrotic eczema",
+    "symptoms": ["Small, itchy blisters on palms/soles", "Scaling", "Cracking"],
+    "suggestions": ["High-potency topical steroids", "Moisturizers", "Cool compresses"]
+},
+{
+    "problem": "epiglottitis",
+    "symptoms": ["High fever", "Sore throat", "Difficulty swallowing", "Drooling", "Labored breathing"],
+    "suggestions": ["Intravenous antibiotics", "Airway management (Emergency)"]
+},
+{
+    "problem": "follicular lymphoma",
+    "symptoms": ["Painless swollen lymph nodes", "Fatigue", "Night sweats", "Weight loss"],
+    "suggestions": ["Rituximab", "Chemotherapy", "Radiation therapy"]
+},
+{
+    "problem": "granulomatosis with polyangiitis",
+    "symptoms": ["Sinus congestion", "Bloody nasal discharge", "Shortness of breath", "Joint pain"],
+    "suggestions": ["Cyclophosphamide", "Corticosteroids", "Rituximab"]
+},
+{
+    "problem": "hidradenitis suppurativa",
+    "symptoms": ["Painful lumps under skin", "Abscesses", "Tunneling (sinus tracts)", "Scarring"],
+    "suggestions": ["Adalimumab", "Topical antibiotics", "Surgical drainage"]
+},
+{
+    "problem": "idiopathic thrombocytopenic purpura (ITP)",
+    "symptoms": ["Easy bruising", "Petechiae (tiny red spots)", "Prolonged bleeding", "Nosebleeds"],
+    "suggestions": ["Corticosteroids", "IVIG", "Splenectomy"]
+},
+{
+    "problem": "juvenile dermatomyositis",
+    "symptoms": ["Rash on eyelids/knuckles", "Proximal muscle weakness", "Abdominal pain"],
+    "suggestions": ["Corticosteroids", "Methotrexate", "Physical therapy"]
+},
+{
+    "problem": "kearns-sayre syndrome",
+    "symptoms": ["Drooping eyelids", "Limited eye movement", "Hearing loss", "Muscle weakness"],
+    "suggestions": ["Coenzyme Q10", "Supportive cardiac/endocrine management"]
+},
+{
+    "problem": "leprosy (Hansen's disease)",
+    "symptoms": ["Discolored skin patches", "Numbness in affected areas", "Muscle weakness"],
+    "suggestions": ["Multi-drug therapy (Dapsone, Rifampicin, Clofazimine)"]
+},
+{
+    "problem": "myositis",
+    "symptoms": ["Muscle weakness", "Muscle pain", "Fatigue", "Difficulty climbing stairs"],
+    "suggestions": ["Corticosteroids", "Immunosuppressants"]
+},
+{
+    "problem": "nodular scleritis",
+    "symptoms": ["Severe eye pain", "Red, raised nodules on the eye", "Blurred vision"],
+    "suggestions": ["Topical steroids", "Oral NSAIDs", "Systemic immunosuppressants"]
+},
+{
+    "problem": "orchitis",
+    "symptoms": ["Testicular pain/swelling", "Fever", "Nausea", "Discharge"],
+    "suggestions": ["Antibiotics (if bacterial)", "Pain relievers", "Scrotal support"]
+},
+{
+    "problem": "pyoderma gangrenosum",
+    "symptoms": ["Painful, rapidly expanding ulcers with purple borders"],
+    "suggestions": ["Corticosteroids", "Cyclosporine", "Wound care"]
+},
+{
+    "problem": "q fever endocarditis",
+    "symptoms": ["Prolonged fever", "Fatigue", "Heart murmur", "Night sweats"],
+    "suggestions": ["Long-term antibiotic therapy (Doxycycline + Hydroxychloroquine)"]
+},
+{
+    "problem": "reflex sympathetic dystrophy (CRPS)",
+    "symptoms": ["Intense burning pain", "Swelling", "Color changes in skin", "Sensitivity to touch"],
+    "suggestions": ["Gabapentin", "Physical therapy", "Nerve blocks"]
+},
+{
+    "problem": "stiff-person syndrome",
+    "symptoms": ["Muscle stiffness", "Painful muscle spasms", "Heightened sensitivity to stimuli"],
+    "suggestions": ["Benzodiazepines (e.g., Diazepam)", "Baclofen", "IVIG"]
+},
+{
+    "problem": "toxic epidermal necrolysis (TEN)",
+    "symptoms": ["Widespread skin redness", "Blistering", "Skin sloughing off", "Fever"],
+    "suggestions": ["Hospitalization (ICU/Burn unit)", "Discontinuation of causative drugs"]
+},
+{
+    "problem": "amyloidosis",
+    "symptoms": ["Fatigue", "Swelling in legs/ankles", "Shortness of breath", "Numbness in hands"],
+    "suggestions": ["Chemotherapy", "Stem cell transplant", "Targeted protein stabilizers"]
+},
+{
+    "problem": "bartonellosis",
+    "symptoms": ["Fever", "Fatigue", "Swollen lymph nodes", "Skin lesions"],
+    "suggestions": ["Azithromycin", "Doxycycline"]
+},
+{
+    "problem": "candidiasis (invasive)",
+    "symptoms": ["High fever", "Chills", "Fatigue", "Organ-specific symptoms (if systemic)"],
+    "suggestions": ["Fluconazole", "Echinocandins (IV)"]
+},
+{
+    "problem": "dermatomyositis (amyopathic)",
+    "symptoms": ["Skin rash characteristic of dermatomyositis without significant muscle weakness"],
+    "suggestions": ["Sun protection", "Hydroxychloroquine", "Topical corticosteroids"]
+},
+{
+    "problem": "empyema",
+    "symptoms": ["Chest pain", "Fever", "Shortness of breath", "Cough"],
+    "suggestions": ["Antibiotics", "Chest tube drainage (thoracostomy)"]
+},
+{
+    "problem": "foamy virus infection (simian)",
+    "symptoms": ["Often asymptomatic in humans", "Potential for mild respiratory illness"],
+    "suggestions": ["Monitoring", "Supportive care"]
+},
+{
+    "problem": "goodpasture syndrome",
+    "symptoms": ["Coughing up blood", "Shortness of breath", "Dark urine", "Fatigue"],
+    "suggestions": ["Plasmapheresis", "Corticosteroids", "Cyclophosphamide"]
+},
+{
+    "problem": "histoplasmosis",
+    "symptoms": ["Fever", "Dry cough", "Chest pain", "Joint pain"],
+    "suggestions": ["Itraconazole", "Amphotericin B (severe)"]
+},
+{
+    "problem": "inclusion body myositis",
+    "symptoms": ["Progressive weakness in quadriceps and finger flexors", "Muscle atrophy", "Difficulty falling"],
+    "suggestions": ["Physical therapy", "Occupational therapy"]
+},
+{
+    "problem": "jeune syndrome",
+    "symptoms": ["Narrow chest", "Short ribs", "Respiratory distress in infancy"],
+    "suggestions": ["Supportive respiratory care", "Chest surgery (in some cases)"]
+},
+{
+    "problem": "kawasaki disease",
+    "symptoms": ["High fever (>5 days)", "Red eyes", "Strawberry tongue", "Swollen hands/feet", "Rash"],
+    "suggestions": ["IVIG", "High-dose Aspirin"]
+},
+{
+    "problem": "leukodystrophy",
+    "symptoms": ["Loss of motor skills", "Difficulty walking", "Vision/hearing loss", "Speech delay"],
+    "suggestions": ["Physical therapy", "Bone marrow transplant (if early)"]
+},
+{
+    "problem": "mononeuritis multiplex",
+    "symptoms": ["Sudden onset of weakness/numbness in two or more nerve areas"],
+    "suggestions": ["Treat the underlying vasculitis or autoimmune cause"]
+},
+{
+    "problem": "niemann-pick disease",
+    "symptoms": ["Enlarged liver/spleen", "Developmental delay", "Poor motor coordination"],
+    "suggestions": ["Supportive care", "Miglustat (for some types)"]
+},
+{
+    "problem": "osteogenesis imperfecta",
+    "symptoms": ["Brittle bones (frequent fractures)", "Blue sclera (eyes)", "Hearing loss"],
+    "suggestions": ["Bisphosphonates", "Physical therapy", "Surgical rod placement"]
+},
+{
+    "problem": "pemphigus vulgaris",
+    "symptoms": ["Painful blisters on skin and mucous membranes"],
+    "suggestions": ["Corticosteroids", "Rituximab", "Mycophenolate"]
+},
+{
+    "problem": "q fever (chronic)",
+    "symptoms": ["Persistent fatigue", "Weight loss", "Heart valve inflammation"],
+    "suggestions": ["Long-term combination antibiotics (years)"]
+},
+{
+    "problem": "renal tubular acidosis",
+    "symptoms": ["Muscle weakness", "Bone pain", "Kidney stones", "Growth retardation (in children)"],
+    "suggestions": ["Bicarbonate supplements", "Potassium citrate"]
+},
+{
+    "problem": "sturge-weber syndrome",
+    "symptoms": ["Port-wine birthmark on face", "Seizures", "Glaucoma"],
+    "suggestions": ["Anticonvulsants", "Laser therapy for birthmark", "Glaucoma drops"]
+},
+{
+    "problem": "thrombotic thrombocytopenic purpura (TTP)",
+    "symptoms": ["Fever", "Confusion", "Purpura", "Anemia symptoms"],
+    "suggestions": ["Plasma exchange (Plasmapheresis)", "Corticosteroids"]
+},
+{
+    "problem": "acanthosis nigricans",
+    "symptoms": ["Dark, velvety skin in body folds"],
+    "suggestions": ["Treat underlying insulin resistance", "Topical retinoids"]
+},
+{
+    "problem": "ankyloglossia",
+    "symptoms": ["Short or tight lingual frenulum (tongue-tie)"],
+    "suggestions": ["Frenotomy (minor surgery)", "Speech therapy"]
+},
+{
+    "problem": "barrett's esophagus",
+    "symptoms": ["Heartburn, acid regurgitation"],
+    "suggestions": ["PPI therapy", "Endoscopic monitoring"]
+},
+{
+    "problem": "cataplexy",
+    "symptoms": ["Sudden muscle weakness triggered by emotion"],
+    "suggestions": ["Sodium oxybate", "Antidepressants"]
+},
+{
+    "problem": "diabetic retinopathy",
+    "symptoms": ["Blurred vision, floaters, vision loss"],
+    "suggestions": ["Blood sugar control", "Laser surgery"]
+},
+{
+    "problem": "epiphyseal dysplasia",
+    "symptoms": ["Joint pain, short stature, early arthritis"],
+    "suggestions": ["Pain management", "Orthopedic monitoring"]
+},
+{
+    "problem": "fibrodysplasia ossificans progressiva",
+    "symptoms": ["Soft tissue turning to bone"],
+    "suggestions": ["Pain management", "Prevent trauma"]
+},
+{
+    "problem": "galactosemia",
+    "symptoms": ["Jaundice, vomiting, failure to thrive"],
+    "suggestions": ["Strict galactose-free diet"]
+},
+{
+    "problem": "hemosiderosis",
+    "symptoms": ["Organ dysfunction due to iron buildup"],
+    "suggestions": ["Chelation therapy", "Phlebotomy"]
+},
+{
+    "problem": "ileocolitis",
+    "symptoms": ["Diarrhea, abdominal pain (Crohn's related)"],
+    "suggestions": ["Corticosteroids", "Immunomodulators"]
+},
+{
+    "problem": "jejunitis",
+    "symptoms": ["Abdominal pain, nausea, weight loss"],
+    "suggestions": ["Antibiotics (if bacterial)", "Dietary adjustment"]
+},
+{
+    "problem": "kuru",
+    "symptoms": ["Tremors, loss of coordination, dementia"],
+    "suggestions": ["Supportive care"]
+},
+{
+    "problem": "leukoplakia",
+    "symptoms": ["White patches in mouth"],
+    "suggestions": ["Biopsy", "Cessation of tobacco/alcohol"]
+},
+{
+    "problem": "myositis ossificans",
+    "symptoms": ["Hard lump in muscle, pain"],
+    "suggestions": ["Physical therapy", "Avoid overexertion"]
+},
+{
+    "problem": "nystagmus",
+    "symptoms": ["Involuntary rhythmic eye movement"],
+    "suggestions": ["Corrective lenses", "Surgery on eye muscles"]
+},
+{
+    "problem": "osteochondritis dissecans",
+    "symptoms": ["Joint pain, locking or catching in joint"],
+    "suggestions": ["Rest, physical therapy, surgery"]
+},
+{
+    "problem": "polymyositis",
+    "symptoms": ["Weakness in proximal muscles"],
+    "suggestions": ["Corticosteroids", "Immunosuppressants"]
+},
+{
+    "problem": "quer'vain tenosynovitis",
+    "symptoms": ["Pain near base of thumb"],
+    "suggestions": ["Thumb spica splint", "NSAIDs"]
+},
+{
+    "problem": "rhabdomyoma",
+    "symptoms": ["Often asymptomatic, or obstructive symptoms"],
+    "suggestions": ["Surgical removal"]
+},
+{
+    "problem": "syringomyelia",
+    "symptoms": ["Back pain, weakness, loss of pain sensation"],
+    "suggestions": ["Surgery to drain cyst"]
+},
+{
+    "problem": "trichotillomania",
+    "symptoms": ["Recurrent urge to pull out hair"],
+    "suggestions": ["Cognitive behavioral therapy"]
+},
+{
+    "problem": "uveitis",
+    "symptoms": ["Eye redness, pain, light sensitivity"],
+    "suggestions": ["Steroid eye drops"]
+},
+{
+    "problem": "vasculitis",
+    "symptoms": ["Fever, fatigue, weight loss, organ-specific pain"],
+    "suggestions": ["Corticosteroids", "Immunosuppressants"]
+},
+{
+    "problem": "wernicke encephalopathy",
+    "symptoms": ["Confusion, eye movement issues, ataxia"],
+    "suggestions": ["Thiamine (Vitamin B1) injection"]
+},
+{
+    "problem": "xeroderma pigmentosum",
+    "symptoms": ["Extreme sensitivity to UV light"],
+    "suggestions": ["Strict sun avoidance", "Protective clothing"]
+},
+{
+    "problem": "yaws",
+    "symptoms": ["Skin sores, bone pain"],
+    "suggestions": ["Single-dose Azithromycin"]
+},
+{
+    "problem": "zika virus",
+    "symptoms": ["Fever, rash, joint pain, conjunctivitis"],
+    "suggestions": ["Rest, fluids, acetaminophen"]
+},
+{
+    "problem": "adenomyosis",
+    "symptoms": ["Heavy, painful menstruation"],
+    "suggestions": ["Hormonal IUDs", "Pain relievers"]
+},
+{
+    "problem": "bunion",
+    "symptoms": ["Bony bump at base of big toe"],
+    "suggestions": ["Roomy shoes, orthotics, surgery"]
+},
+{
+    "problem": "croup",
+    "symptoms": ["Barking cough, hoarseness"],
+    "suggestions": ["Humidified air, corticosteroids"]
+},
+{
+    "problem": "amyoplasia",
+    "symptoms": ["Congenital joint contractures, muscle weakness"],
+    "suggestions": ["Physical therapy, serial casting"]
+},
+{
+    "problem": "beriberi",
+    "symptoms": ["Muscle wasting, loss of sensation, heart failure"],
+    "suggestions": ["Thiamine supplementation"]
+},
+{
+    "problem": "choreoathetosis",
+    "symptoms": ["Involuntary dance-like movements"],
+    "suggestions": ["Dopamine-depleting agents"]
+},
+{
+    "problem": "dyskeratosis congenita",
+    "symptoms": ["Abnormal skin pigmentation, nail dystrophy"],
+    "suggestions": ["Bone marrow stimulants, stem cell transplant"]
+},
+{
+    "problem": "ebstein anomaly",
+    "symptoms": ["Cyanosis, fatigue, heart murmur"],
+    "suggestions": ["Surgical repair, arrhythmia management"]
+},
+{
+    "problem": "fanconi anemia",
+    "symptoms": ["Bone marrow failure, physical abnormalities"],
+    "suggestions": ["Stem cell transplant, androgen therapy"]
+},
+{
+    "problem": "glycogen storage disease",
+    "symptoms": ["Enlarged liver, low blood sugar, muscle weakness"],
+    "suggestions": ["Frequent feedings, cornstarch regimen"]
+},
+{
+    "problem": "homocystinuria",
+    "symptoms": ["Vision problems, skeletal abnormalities, developmental delay"],
+    "suggestions": ["Vitamin B6, B12, and folate supplements"]
+},
+{
+    "problem": "insuloma",
+    "symptoms": ["Severe hypoglycemia, dizziness, confusion"],
+    "suggestions": ["Surgical resection"]
+},
+{
+    "problem": "jansen metaphyseal chondrodysplasia",
+    "symptoms": ["Short stature, bowed limbs, hypercalcemia"],
+    "suggestions": ["Bisphosphonates, orthopedic surgery"]
+},
+{
+    "problem": "kikuchi-fujimoto disease",
+    "symptoms": ["Fever, tender lymphadenopathy"],
+    "suggestions": ["Supportive care, NSAIDs"]
+},
+{
+    "problem": "leber congenital amaurosis",
+    "symptoms": ["Severe vision loss at birth, nystagmus"],
+    "suggestions": ["Gene therapy"]
+}
+]
+
+
 
     result = None
-    searched_problem = None
+    searched_problem = ""
+
+    available_conditions = [
+        item["problem"]
+        for item in medicines
+    ]
 
     if request.method == "POST":
 
-        problem = request.form.get("problem", "").strip().lower()
+        searched_problem = request.form.get("problem", "").strip()
 
-        searched_problem = problem
+        for item in medicines:
 
-        for key, value in medicines.items():
+            if item["problem"].lower() == searched_problem.lower():
+                result = {
+                    "symptoms": item.get("symptoms", []),
+                    "suggestions": item.get("suggestions", [])
+                }
 
-            if key.lower() == problem or problem in key.lower():
-
-                result = value
-                result["problem"] = key
-                break
-
-        if result:
-
-            try:
                 conn = get_db()
                 cur = conn.cursor()
 
-                cur.execute(
-                    """
-                    INSERT INTO history
-                    (user_id, username, problem, suggestions, symptoms, advice)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        session["user_id"],
-                        session["username"],
-                        result["problem"],
-                        ", ".join(result["suggestions"]),
-                        ", ".join(result["symptoms"]),
-                        result.get("advice", "No advice available")
-                    )
-                )
+                cur.execute("""
+                    INSERT INTO history (user_id, username, problem, suggestions, symptoms)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (
+                    session.get("user_id"),
+                    session.get("username"),
+                    searched_problem,
+                    json.dumps(result.get("suggestions", [])),
+                    json.dumps(result.get("symptoms", []))
+                ))
 
                 conn.commit()
 
                 cur.close()
                 conn.close()
 
-            except Exception as e:
-                print(e)
-
-    available_conditions = [item["problem"] for item in medicines]
+                break
 
     return render_template(
         "medicine.html",
-        medicines=medicines,
         result=result,
         searched_problem=searched_problem,
         available_conditions=available_conditions
@@ -693,7 +1968,7 @@ def download_history():
         conn = get_db()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(
-            "SELECT problem, suggestions, symptoms, advice, searched_at FROM history WHERE user_id = %s ORDER BY searched_at DESC",
+            "SELECT problem, suggestions, symptoms, searched_at FROM history WHERE user_id = %s ORDER BY searched_at DESC",
             (session["user_id"],)
         )
         records = cur.fetchall()
@@ -703,9 +1978,9 @@ def download_history():
         records = []
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Problem", "Suggestions", "Symptoms", "Advice", "Searched At"])
+    writer.writerow(["Problem", "Suggestions", "Symptoms", "Searched At"])
     for r in records:
-        writer.writerow([r["problem"], r["suggestions"], r["symptoms"], r["advice"], r["searched_at"]])
+        writer.writerow([r["problem"], r["suggestions"], r["symptoms"], r["searched_at"]])
     output.seek(0)
     return Response(
         output.getvalue(),
@@ -720,78 +1995,166 @@ def download_history():
 @app.route("/admin")
 @admin_required
 def admin_dashboard():
-    try:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute("SELECT COUNT(*) as cnt FROM users")
-        total_users = cur.fetchone()["cnt"]
-        cur.execute("SELECT COUNT(*) as cnt FROM history")
-        total_history = cur.fetchone()["cnt"]
-        cur.execute("SELECT COUNT(*) as cnt FROM history WHERE searched_at >= NOW() - INTERVAL '7 days'")
-        week_searches = cur.fetchone()["cnt"]
-        cur.execute("SELECT username, COUNT(*) as cnt FROM history GROUP BY username ORDER BY cnt DESC LIMIT 5")
-        top_users = cur.fetchall()
-        cur.execute("SELECT problem, COUNT(*) as cnt FROM history GROUP BY problem ORDER BY cnt DESC LIMIT 5")
-        top_conditions = cur.fetchall()
-        cur.close()
-        conn.close()
-    except Exception:
-        total_users = total_history = week_searches = 0
-        top_users = top_conditions = []
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # ========================
+    # TOTAL USERS
+    # ========================
+    cur.execute("SELECT COUNT(*) FROM users")
+    total_users = cur.fetchone()[0]
+
+    # ========================
+    # TOTAL HISTORY
+    # ========================
+    cur.execute("SELECT COUNT(*) FROM history")
+    total_history = cur.fetchone()[0]
+
+    # ========================
+    # WEEK SEARCHES
+    # ========================
+    cur.execute("""
+        SELECT COUNT(*)
+        FROM history
+        WHERE searched_at >= NOW() - INTERVAL '7 days'
+    """)
+    week_searches = cur.fetchone()[0]
+
+    # ========================
+    # TOP ACTIVE USERS
+    # ========================
+    cur.execute("""
+        SELECT users.username, COUNT(history.id) AS cnt
+        FROM history
+        JOIN users ON history.user_id = users.id
+        GROUP BY users.username
+        ORDER BY cnt DESC
+        LIMIT 5
+    """)
+
+    top_users = []
+    for row in cur.fetchall():
+        top_users.append({
+            "username": row[0],
+            "cnt": row[1]
+        })
+
+    # ========================
+    # TOP CONDITIONS
+    # ========================
+    cur.execute("""
+        SELECT problem, COUNT(*) AS cnt
+        FROM history
+        GROUP BY problem
+        ORDER BY cnt DESC
+        LIMIT 5
+    """)
+
+    top_conditions = []
+    for row in cur.fetchall():
+        top_conditions.append({
+            "problem": row[0],
+            "cnt": row[1]
+        })
+
+    # ========================
+    # ALL USERS (FOR TABLE)
+    # ========================
+    cur.execute("""
+        SELECT id, username, email, created_at, password_hash
+        FROM users
+        ORDER BY id ASC
+    """)
+
+    users = []
+    for row in cur.fetchall():
+        users.append({
+            "id": row[0],
+            "username": row[1],
+            "email": row[2],
+            "created_at": row[3],
+            "password_hash": row[4]
+        })
+
+    # ========================
+    # CLOSE DB
+    # ========================
+    cur.close()
+    conn.close()
+
+    # ========================
+    # RENDER TEMPLATE
+    # ========================
     return render_template(
         "admin_dashboard.html",
-        admin_name=session.get("admin_display", "Admin"),
+        admin_name=session.get("admin_display"),
+
         total_users=total_users,
         total_history=total_history,
         week_searches=week_searches,
+
         top_users=top_users,
         top_conditions=top_conditions,
+
+        users=users
     )
 
-
 @app.route("/admin/users")
-@admin_required
 def admin_users():
-    search = request.args.get("q", "").strip()
-    try:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        if search:
-            cur.execute(
-                "SELECT id, username, email, created_at FROM users WHERE username ILIKE %s OR email ILIKE %s ORDER BY created_at DESC",
-                (f"%{search}%", f"%{search}%")
-            )
-        else:
-            cur.execute("SELECT id, username, email, created_at FROM users ORDER BY created_at DESC")
-        users = cur.fetchall()
-        cur.close()
-        conn.close()
-    except Exception:
-        users = []
-    return render_template("admin_users.html", users=users, search=search)
 
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("""
+        SELECT username, email, created_at, password_hash
+        FROM users
+        ORDER BY created_at DESC
+    """)
+
+    users = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("SELECT COUNT(*) FROM users")
+    total_users = cur.fetchone()["count"]
+
+    cur.execute("SELECT COUNT(*) FROM history")
+    total_history = cur.fetchone()["count"]
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "admin_users.html",
+        users=users
+    )
 
 @app.route("/admin/history")
-@admin_required
 def admin_history():
-    search = request.args.get("q", "").strip()
-    try:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        if search:
-            cur.execute(
-                "SELECT * FROM history WHERE username ILIKE %s OR problem ILIKE %s ORDER BY searched_at DESC",
-                (f"%{search}%", f"%{search}%")
-            )
-        else:
-            cur.execute("SELECT * FROM history ORDER BY searched_at DESC")
-        records = cur.fetchall()
-        cur.close()
-        conn.close()
-    except Exception:
-        records = []
-    return render_template("admin_history.html", records=records, search=search)
 
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("""
+        SELECT username, problem, symptoms, suggestions, searched_at
+        FROM history
+        ORDER BY searched_at DESC
+    """)
+
+    history = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "admin_history.html",
+        history=history
+    )
 
 @app.route("/admin/download/users")
 @admin_required
@@ -832,9 +2195,9 @@ def admin_download_history():
         records = []
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["ID", "Username", "Problem", "Suggestions", "Symptoms", "Advice", "Searched At"])
+    writer.writerow(["ID", "Username", "Problem", "Suggestions", "Symptoms",  "Searched At"])
     for r in records:
-        writer.writerow([r["id"], r["username"], r["problem"], r["suggestions"], r["symptoms"], r["advice"], r["searched_at"]])
+        writer.writerow([r["id"], r["username"], r["problem"], r["suggestions"], r["symptoms"], r["searched_at"]])
     output.seek(0)
     return Response(
         output.getvalue(),

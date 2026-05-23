@@ -41,10 +41,8 @@ ADMIN_DISPLAY = {
 
 def get_db():
     return psycopg2.connect(
-        host="localhost",
-        database="medicare_db",
-        user="postgres",
-        password="SNG@2014"
+        DATABASE_URL,
+        sslmode="require"
     )
 
 

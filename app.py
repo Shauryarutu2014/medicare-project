@@ -29,7 +29,7 @@ DATABASE_URL = os.environ.get(
 # ══════════════════════════════════════════════════════════════════════════════
 ADMIN_USERS = {
     "shauryagadekar_admin2026": "scrypt:32768:8:1$LySTU8ASTVbrVPzb$7e87b299dc3424f9bab5d4873f7e0cb1f2e3506f79da4506662b509fc095072c98cc318c6e2fff630cebb47e370e6744104191792f3560f05cb485acb77e5e0f",   # Admin 1: Shaurya Nitin Gadekar
-    "harshthakre_admin2026": "scrypt:32768:8:1$jj9e3KMDRxKgSgdg$eb9e467dce2305d58d3787d8e0aaad3b87c65e481abf1a29af142b110303ccea6513f615be4f6af352443b8f6756c378e2b44dccfe1bc5cb4f65307a2d6a2e8a",      # Admin 2: Harsh Sanjay Thakre
+    "harshthakre_admin2026": "scrypt:32768:8:1$By2rvIE051bnaZIw$4ddddcaf3597bf8d2cfa866c8a215c45dd6c4a17de1783f713b27b939be43d62a0895564a7eec27415391f782de1e9dad841aab17eab8488ed35795f7412345e",      # Admin 2: Harsh Sanjay Thakre
 }
 # Admin display names (shown in the hidden admin panel)
 ADMIN_DISPLAY = {

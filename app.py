@@ -502,57 +502,25 @@ def signup():
 
     return render_template("signup.html", captcha=session["captcha_question"])
 
-@app.route("/signin", methods=["GET", "POST"])
+@app.route('/signin', methods=['GET', 'POST'])
 def signin():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        captcha_answer = request.form.get("captcha_answer", "").strip()
-        captcha_expected = session.get("captcha_answer")
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
 
-        if not username or not password:
-            flash("Username and password are required.", "danger")
-            return redirect(url_for("signin"))
-        if captcha_answer != str(captcha_expected):
-            flash("Incorrect CAPTCHA answer.", "danger")
-            return redirect(url_for("signin"))
+        print("USERNAME:", username)
+        print("PASSWORD:", password)
 
-        # ── Check if admin credentials ──────────────────────────────────────
-        if username in ADMIN_USERS and check_password_hash(ADMIN_USERS[username], password):
-            session.clear()
-            session["is_admin"] = True
-            session["admin_username"] = username
-            session["admin_display"] = ADMIN_DISPLAY.get(username, username)
-            return redirect(url_for("admin_dashboard"))
-        # ───────────────────────────────────────────────────────────────────
-
-        try:
-            conn = get_db()
-            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            cur.execute("SELECT * FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-            cur.close()
-            conn.close()
-        except Exception:
-            flash("Database error. Please try again.", "danger")
-            return redirect(url_for("signin"))
-
-        if user and check_password_hash(user["password_hash"], password):
-            session.clear()
-            session["user_id"] = user["id"]
-            session["username"] = user["username"]
-            session["email"] = user["email"]
-            session["is_admin"] = False
-            flash(f"Welcome back, {user['username']}!", "success")
-            return redirect(url_for("dashboard"))
+        # TEMP LOGIN CHECK (test version)
+        if username == "admin" and password == "admin":
+            session['user'] = username
+            print("LOGIN SUCCESS")
+            return redirect('/dashboard')
         else:
-            flash("Invalid username or password.", "danger")
-            return redirect(url_for("signin"))
+            print("LOGIN FAILED")
+            return "Invalid credentials"
 
-    a, b = random.randint(1, 9), random.randint(1, 9)
-    session["captcha_answer"] = a + b
-    session["captcha_question"] = f"{a} + {b}"
-    return render_template("signin.html", captcha=session["captcha_question"])
+    return render_template('signin.html')
 
 
 @app.route("/logout")

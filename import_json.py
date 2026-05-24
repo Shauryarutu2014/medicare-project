@@ -1,15 +1,23 @@
 import json
-import psycopg2
+import sqlite3
+
+DB_PATH = "medicare.db"
 
 # connect database
-conn = psycopg2.connect(
-    host="localhost",
-    database="medicare_db",
-    user="postgres",
-    password="SNG@2014"
-)
+conn = sqlite3.connect(DB_PATH)
 
+# cursor
 cur = conn.cursor()
+
+# create table if not exists
+cur.execute("""
+CREATE TABLE IF NOT EXISTS medicines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    problem TEXT,
+    symptoms TEXT,
+    suggestions TEXT
+)
+""")
 
 # open json file
 with open("medicines.json", "r") as file:
@@ -27,13 +35,15 @@ for item in data:
     cur.execute(
         """
         INSERT INTO medicines (problem, symptoms, suggestions)
-        VALUES (%s, %s, %s)
+        VALUES (?, ?, ?)
         """,
         (problem, symptoms, suggestions)
     )
 
+# save changes
 conn.commit()
 
+# close
 cur.close()
 conn.close()
 

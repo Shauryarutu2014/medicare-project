@@ -3,7 +3,6 @@ import json
 import random
 import csv
 import io
-from datetime import datetime
 from functools import wraps
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -566,17 +565,14 @@ def dashboard():
 
         # COUNT SEARCHES
         cur.execute("""
-            SELECT COUNT(*) as cnt 
-            FROM history 
-            WHERE username = %s
+            SELECT COUNT(*) FROM history WHERE username = %s
         """, (session["username"],))
 
-        history_count = cur.fetchone()["cnt"]
+        history_count = cur.fetchone()[0]
 
         # RECENT SEARCHES
         cur.execute("""
-            SELECT * 
-            FROM history 
+            SELECT * FROM history 
             WHERE username = %s 
             ORDER BY searched_at DESC 
             LIMIT 3
@@ -637,38 +633,37 @@ def medicine():
     if request.method == "POST":
 
         searched_problem = request.form.get("problem", "").strip()
+        result = None
 
         for item in medicines:
 
-            if item["problem"].lower() == searched_problem.lower():
+            if searched_problem.lower() in item["problem"].lower():
                 result = {
                     "symptoms": item.get("symptoms", []),
                     "suggestions": item.get("suggestions", [])
                 }
 
+                # 🔥 SAVE TO DATABASE
                 conn = get_db()
                 cur = conn.cursor()
 
                 cur.execute("""
-                INSERT INTO history (
-                    username,
-                    datetime,
-                    problem,
-                    symptoms,
-                    suggestions,
-                    searched_at
-                )
-                VALUES (%s, %s, %s, %s, %s, NOW())
+                    INSERT INTO history (
+                        username,
+                        problem,
+                        symptoms,
+                        suggestions,
+                        searched_at
+                    )
+                    VALUES (%s, %s, %s, %s, NOW())
                 """, (
                     session["username"],
-                    str(datetime.now()),
                     searched_problem,
-                    json.dumps(result.get("symptoms", [])),
-                    json.dumps(result.get("suggestions", []))
+                    json.dumps(result["symptoms"]),
+                    json.dumps(result["suggestions"])
                 ))
 
                 conn.commit()
-
                 cur.close()
                 conn.close()
 
@@ -684,24 +679,19 @@ def medicine():
 @app.route("/history")
 @login_required
 def history():
-    try:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-        cur.execute("""
-            SELECT * FROM history 
-            WHERE username = %s 
-            ORDER BY searched_at DESC
-        """, (session["username"],))
+    cur.execute("""
+        SELECT * FROM history 
+        WHERE username = %s 
+        ORDER BY searched_at DESC
+    """, (session["username"],))
 
-        records = cur.fetchall()
+    records = cur.fetchall()
 
-        cur.close()
-        conn.close()
-
-    except Exception as e:
-        print("HISTORY ERROR:", e)
-        records = []
+    cur.close()
+    conn.close()
 
     return render_template("history.html", records=records)
 

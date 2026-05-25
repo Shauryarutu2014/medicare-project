@@ -563,27 +563,43 @@ def dashboard():
     try:
         conn = get_db()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute("SELECT COUNT(*) as cnt FROM history WHERE user_id = %s", (session["user_id"],))
+
+        # COUNT SEARCHES
+        cur.execute("""
+            SELECT COUNT(*) as cnt 
+            FROM history 
+            WHERE username = %s
+        """, (session["username"],))
+
         history_count = cur.fetchone()["cnt"]
-        cur.execute(
-            "SELECT * FROM history WHERE user_id = %s ORDER BY searched_at DESC LIMIT 3",
-            (session["user_id"],)
-        )
+
+        # RECENT SEARCHES
+        cur.execute("""
+            SELECT * 
+            FROM history 
+            WHERE username = %s 
+            ORDER BY searched_at DESC 
+            LIMIT 3
+        """, (session["username"],))
+
         recent = cur.fetchall()
+
         cur.close()
         conn.close()
-    except Exception:
+
+    except Exception as e:
+        print("DASHBOARD ERROR:", e)
         history_count = 0
-        total_users = 0
         recent = []
-    return render_template(
-        "dashboard.html",
-        username=session["username"],
-        history_count=history_count,
-        recent=recent,
-        tips_count=len(HEALTH_TIPS),
-        yoga_count=len(YOGA_POSES)
-    )
+
+        return render_template(
+            "dashboard.html",
+            username=session["username"],
+            history_count=history_count,
+            recent=recent,
+            tips_count=len(HEALTH_TIPS),
+            yoga_count=len(YOGA_POSES)
+        )
 
 @app.route("/health-tips")
 @login_required

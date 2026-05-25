@@ -620,7 +620,7 @@ def medicine():
 
     if request.method == "POST":
 
-        problem = request.form.get("problem", "").strip()
+        searched_problem = request.form.get("problem", "").strip()
 
         for item in medicines:
 
@@ -643,7 +643,7 @@ def medicine():
                 VALUES (%s, %s, %s, %s)
                 """, (
                     session["username"],
-                    problem,
+                    searched_problem,
                     json.dumps(result.get("symptoms", [])),
                     json.dumps(result.get("suggestions", []))
                 ))

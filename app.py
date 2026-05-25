@@ -667,17 +667,20 @@ def history():
     try:
         conn = get_db()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
         cur.execute(
-            "SELECT * FROM history WHERE user_id = %s ORDER BY searched_at DESC",
-            (session["user_id"],)
+            "SELECT * FROM history WHERE username = %s ORDER BY searched_at DESC",
+            (session["username"],)
         )
+
         records = cur.fetchall()
         cur.close()
         conn.close()
-    except Exception:
-        records = []
-    return render_template("history.html", records=records)
 
+    except Exception as e:
+        records = []
+
+    return render_template("history.html", records=records)
 
 @app.route("/download-history")
 @login_required

@@ -5,7 +5,8 @@ import csv
 import io
 from datetime import datetime
 from functools import wraps
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -32,13 +33,13 @@ ADMIN_DISPLAY = {
     "harshthakre_admin2026":    "Harsh Thakre",
 }
 # ══════════════════════════════════════════════════════════════════════════════
-
-
-DB_PATH = "medicare.db"
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://medicare_user:d7gaTAaBVVS4c5bGmwvCilMnACC9r6tz@dpg-d85efkgjs32c73aftmbg-a.virginia-postgres.render.com/medicare_f2fm"
+)
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL)
     return conn
 
 def init_db():
@@ -46,16 +47,16 @@ def init_db():
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             username VARCHAR(100) UNIQUE NOT NULL,
             email VARCHAR(255) NOT NULL,
             password_hash TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT NOW()
         )
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
             username VARCHAR(100),
             problem VARCHAR(255),
@@ -468,7 +469,7 @@ def signup():
 
         try:
             cur.execute(
-                "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+                "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
                 (username, email, password_hash)
             )
             conn.commit()
@@ -520,8 +521,8 @@ def signin():
 
         try:
             conn = get_db()
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM users WHERE username = ?", (username,))
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("SELECT * FROM users WHERE username = %s", (username,))
             user = cur.fetchone()
             cur.close()
             conn.close()
@@ -561,11 +562,11 @@ def logout():
 def dashboard():
     try:
         conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) as cnt FROM history WHERE user_id = ?", (session["user_id"],))
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT COUNT(*) as cnt FROM history WHERE user_id = %s", (session["user_id"],))
         history_count = cur.fetchone()["cnt"]
         cur.execute(
-            "SELECT * FROM history WHERE user_id = ? ORDER BY searched_at DESC LIMIT 3",
+            "SELECT * FROM history WHERE user_id = %s ORDER BY searched_at DESC LIMIT 3",
             (session["user_id"],)
         )
         recent = cur.fetchall()
@@ -634,7 +635,7 @@ def medicine():
 
                 cur.execute("""
                     INSERT INTO history (user_id, username, problem, suggestions, symptoms)
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s)
                 """, (
                     session.get("user_id"),
                     session.get("username"),
@@ -662,9 +663,9 @@ def medicine():
 def history():
     try:
         conn = get_db()
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(
-            "SELECT * FROM history WHERE user_id = ? ORDER BY searched_at DESC",
+            "SELECT * FROM history WHERE user_id = %s ORDER BY searched_at DESC",
             (session["user_id"],)
         )
         records = cur.fetchall()
@@ -680,9 +681,9 @@ def history():
 def download_history():
     try:
         conn = get_db()
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(
-            "SELECT problem, suggestions, symptoms, searched_at FROM history WHERE user_id = ? ORDER BY searched_at DESC",
+            "SELECT problem, suggestions, symptoms, searched_at FROM history WHERE user_id = %s ORDER BY searched_at DESC",
             (session["user_id"],)
         )
         records = cur.fetchall()
@@ -711,7 +712,7 @@ def download_history():
 def admin_dashboard():
 
     conn = get_db()
-    cur = conn.cursor()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
     # ========================
     # TOTAL USERS
@@ -875,7 +876,7 @@ def admin_history():
 def admin_download_users():
     try:
         conn = get_db()
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute("SELECT id, username, email, created_at FROM users ORDER BY created_at DESC")
         users = cur.fetchall()
         cur.close()
@@ -900,7 +901,7 @@ def admin_download_users():
 def admin_download_history():
     try:
         conn = get_db()
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute("SELECT * FROM history ORDER BY searched_at DESC")
         records = cur.fetchall()
         cur.close()

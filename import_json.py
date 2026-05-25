@@ -1,10 +1,10 @@
 import json
-import sqlite3
+import psycopg2
 
-DB_PATH = "medicare.db"
+DATABASE_URL = "postgresql://medicare_user:d7gaTAaBVVS4c5bGmwvCilMnACC9r6tz@dpg-d85efkgjs32c73aftmbg-a.virginia-postgres.render.com/medicare_f2fm"
 
 # connect database
-conn = sqlite3.connect(DB_PATH)
+conn = psycopg2.connect(DATABASE_URL)
 
 # cursor
 cur = conn.cursor()
@@ -12,7 +12,7 @@ cur = conn.cursor()
 # create table if not exists
 cur.execute("""
 CREATE TABLE IF NOT EXISTS medicines (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     problem TEXT,
     symptoms TEXT,
     suggestions TEXT
@@ -35,7 +35,7 @@ for item in data:
     cur.execute(
         """
         INSERT INTO medicines (problem, symptoms, suggestions)
-        VALUES (?, ?, ?)
+        VALUES (%s, %s, %s)
         """,
         (problem, symptoms, suggestions)
     )
@@ -48,3 +48,4 @@ cur.close()
 conn.close()
 
 print("Data inserted successfully!")
+

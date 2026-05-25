@@ -620,7 +620,7 @@ def medicine():
 
     if request.method == "POST":
 
-        searched_problem = request.form.get("problem", "").strip()
+        problem = request.form.get("problem", "").strip()
 
         for item in medicines:
 
@@ -634,16 +634,19 @@ def medicine():
                 cur = conn.cursor()
 
                 cur.execute("""
-                    INSERT INTO history (user_id, username, problem, suggestions, symptoms)
-                    VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO history (
+                    username,
+                    problem,
+                    symptoms,
+                    suggestions
+                )
+                VALUES (%s, %s, %s, %s)
                 """, (
-                    session.get("user_id"),
-                    session.get("username"),
-                    searched_problem,
-                    json.dumps(result.get("suggestions", [])),
-                    json.dumps(result.get("symptoms", []))
+                    session["username"],
+                    problem,
+                    json.dumps(result.get("symptoms", [])),
+                    json.dumps(result.get("suggestions", []))
                 ))
-
                 conn.commit()
 
                 cur.close()

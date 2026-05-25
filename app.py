@@ -682,10 +682,7 @@ def download_history():
     try:
         conn = get_db()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute(
-            "SELECT problem, suggestions, symptoms, searched_at FROM history WHERE user_id = %s ORDER BY searched_at DESC",
-            (session["user_id"],)
-        )
+        cur.execute( "SELECT problem, suggestions, symptoms, searched_at FROM history WHERE user_id = %s ORDER BY searched_at DESC", (session["user_id"],) )
         records = cur.fetchall()
         cur.close()
         conn.close()

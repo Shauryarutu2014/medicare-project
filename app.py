@@ -565,14 +565,17 @@ def dashboard():
 
         # COUNT SEARCHES
         cur.execute("""
-            SELECT COUNT(*) FROM history WHERE username = %s
+            SELECT COUNT(*) 
+            FROM history 
+            WHERE username = %s
         """, (session["username"],))
 
         history_count = cur.fetchone()[0]
 
         # RECENT SEARCHES
         cur.execute("""
-            SELECT * FROM history 
+            SELECT * 
+            FROM history 
             WHERE username = %s 
             ORDER BY searched_at DESC 
             LIMIT 3
@@ -588,14 +591,15 @@ def dashboard():
         history_count = 0
         recent = []
 
-        return render_template(
-            "dashboard.html",
-            username=session["username"],
-            history_count=history_count,
-            recent=recent,
-            tips_count=len(HEALTH_TIPS),
-            yoga_count=len(YOGA_POSES)
-        )
+    # ✅ IMPORTANT: THIS MUST ALWAYS RUN
+    return render_template(
+        "dashboard.html",
+        username=session["username"],
+        history_count=history_count,
+        recent=recent,
+        tips_count=len(HEALTH_TIPS),
+        yoga_count=len(YOGA_POSES)
+    )
 
 @app.route("/health-tips")
 @login_required

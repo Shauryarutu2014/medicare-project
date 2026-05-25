@@ -86,6 +86,10 @@
         <p>No users found{% if search %} matching "{{ search }}"{% endif %}.</p>
       </div>
       {% endif %}
+      <a href="/admin/delete-user/{{ user.id }}"
+   onclick="return confirm('Are you sure? This will delete user and all history!')">
+   Delete
+</a>
     </div>
   </div>
 </div>

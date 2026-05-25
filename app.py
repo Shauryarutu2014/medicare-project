@@ -636,17 +636,21 @@ def medicine():
                 cur.execute("""
                 INSERT INTO history (
                     username,
+                    datetime,
                     problem,
                     symptoms,
-                    suggestions
+                    suggestions,
+                    searched_at
                 )
-                VALUES (%s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, NOW())
                 """, (
                     session["username"],
+                    str(datetime.datetime.now()),
                     searched_problem,
                     json.dumps(result.get("symptoms", [])),
                     json.dumps(result.get("suggestions", []))
                 ))
+
                 conn.commit()
 
                 cur.close()
@@ -668,16 +672,19 @@ def history():
         conn = get_db()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-        cur.execute(
-            "SELECT * FROM history WHERE username = %s ORDER BY searched_at DESC",
-            (session["username"],)
-        )
+        cur.execute("""
+            SELECT * FROM history 
+            WHERE username = %s 
+            ORDER BY searched_at DESC
+        """, (session["username"],))
 
         records = cur.fetchall()
+
         cur.close()
         conn.close()
 
     except Exception as e:
+        print("HISTORY ERROR:", e)
         records = []
 
     return render_template("history.html", records=records)

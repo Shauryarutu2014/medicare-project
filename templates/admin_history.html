@@ -37,7 +37,7 @@
     <div class="admin-panel-header">
       <div class="admin-panel-title">All Medicine Searches</div>
       <div style="display:flex; gap:.6rem; align-items:center;">
-        <span class="admin-count">{{ records|length }} records</span>
+        <span class="admin-count">{{ history|length }} records</span>
         <a href="{{ url_for('admin_download_history') }}" class="admin-btn admin-btn-download">⬇ Export CSV</a>
       </div>
     </div>
@@ -48,7 +48,7 @@
         {% if search %}<a href="{{ url_for('admin_history') }}" class="admin-btn" style="background:rgba(255,255,255,.06); color:#94a3b8; border:1px solid rgba(255,255,255,.1);">Clear</a>{% endif %}
       </form>
 
-      {% if records %}
+      {% if history %}
       <div style="overflow-x:auto;">
         <table class="admin-table">
           <thead>
@@ -61,7 +61,7 @@
             </tr>
           </thead>
           <tbody>
-            {% for r in records %}
+            {% for r in history %}
             <tr>
               <td class="admin-id">{{ loop.index }}</td>
               <td>

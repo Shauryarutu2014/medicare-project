@@ -876,9 +876,15 @@ def admin_history():
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("""
-        SELECT id, username, problem, symptoms, suggestions, searched_at
+        SELECT 
+            history.id,
+            history.username,
+            history.problem,
+            history.symptoms,
+            history.suggestions,
+            history.searched_at
         FROM history
-        ORDER BY searched_at DESC
+        ORDER BY history.searched_at DESC
     """)
 
     history = cur.fetchall()

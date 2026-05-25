@@ -645,7 +645,7 @@ def medicine():
                 VALUES (%s, %s, %s, %s, %s, NOW())
                 """, (
                     session["username"],
-                    str(datetime.datetime.now()),
+                    str(datetime.now()),
                     searched_problem,
                     json.dumps(result.get("symptoms", [])),
                     json.dumps(result.get("suggestions", []))

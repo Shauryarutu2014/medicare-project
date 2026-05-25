@@ -762,7 +762,7 @@ def admin_dashboard():
     cur.execute("""
         SELECT users.username, COUNT(history.id) AS cnt
         FROM history
-        JOIN users ON history.user_id = users.id
+        JOIN users ON history.username = users.username
         GROUP BY users.username
         ORDER BY cnt DESC
         LIMIT 5
@@ -855,10 +855,10 @@ def admin_users():
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    cur.execute("SELECT COUNT(*) FROM users")
+    cur.execute("SELECT COUNT(*) AS count FROM users")
     total_users = cur.fetchone()["count"]
 
-    cur.execute("SELECT COUNT(*) FROM history")
+    cur.execute("SELECT COUNT(*) AS count FROM history")
     total_history = cur.fetchone()["count"]
 
     cur.close()
@@ -876,7 +876,7 @@ def admin_history():
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("""
-        SELECT username, problem, symptoms, suggestions, searched_at
+        SELECT id, username, problem, symptoms, suggestions, searched_at
         FROM history
         ORDER BY searched_at DESC
     """)
@@ -897,7 +897,11 @@ def admin_download_users():
     try:
         conn = get_db()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute("SELECT id, username, email, created_at FROM users ORDER BY created_at DESC")
+        cur.execute("""
+            SELECT id, username, email, created_at
+            FROM users
+            ORDER BY created_at DESC
+        """)
         users = cur.fetchall()
         cur.close()
         conn.close()

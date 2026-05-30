@@ -128,10 +128,10 @@ ADMIN_PANEL_ACCOUNTS = [
         "password": "shauryagadekar@27052014",
     },
     {
-        "username": "admin",
-        "display_name": "Shaurya Nitin Gadekar (Admin)",
-        "role": "admin",
-        "password": "admin123",
+        "username": "thakreharsh2014",
+        "display_name": "Harsh Sanjay Thakre  (Super Admin)",
+        "role": "superadmin",
+        "password": "harshthakre@09112013",
     }
 ]
 

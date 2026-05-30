@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Sign In — AdminPanel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin_panel/css/style.css') }}?v=4">
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+    .login-page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      padding: 24px;
+    }
+    .login-wrapper {
+      width: 100%;
+      max-width: 400px;
+    }
+    .login-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 32px;
+    }
+    .login-brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--primary);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .login-brand-icon.superadmin {
+      background: #7c3aed;
+    }
+    .login-brand-name {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      box-shadow: var(--shadow);
+    }
+    .login-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 4px;
+      letter-spacing: -0.3px;
+    }
+    .login-subtitle {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      margin: 0 0 24px;
+    }
+    .login-field {
+      margin-bottom: 16px;
+    }
+    .login-field label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .login-input {
+      width: 100%;
+      height: 40px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg);
+      box-sizing: border-box;
+      transition: border-color .15s, box-shadow .15s;
+      outline: none;
+    }
+    .login-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(79,70,229,.1);
+    }
+    .login-btn {
+      width: 100%;
+      height: 42px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background .15s, box-shadow .15s;
+    }
+    .login-btn:hover { background: #4338ca; box-shadow: 0 2px 8px rgba(79,70,229,.25); }
+    .login-btn.superadmin { background: #7c3aed; }
+    .login-btn.superadmin:hover { background: #6d28d9; box-shadow: 0 2px 8px rgba(124,58,237,.25); }
+    .login-back {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      text-decoration: none;
+      justify-content: center;
+      margin-top: 20px;
+      transition: color .15s;
+    }
+    .login-back:hover { color: var(--text); }
+    .login-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 99px;
+      margin-bottom: 16px;
+    }
+    .login-badge.admin { background: var(--primary-light); color: var(--primary); }
+    .login-badge.superadmin { background: #f3e8ff; color: #7c3aed; }
+    .login-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 20px 0;
+    }
+    .pre-filled-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      margin-bottom: 16px;
+    }
+    .pre-filled-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--primary-light);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .pre-filled-avatar.superadmin { background: #f3e8ff; color: #7c3aed; }
+    .pre-filled-info { flex: 1; min-width: 0; }
+    .pre-filled-name { font-size: 13px; font-weight: 600; color: var(--text); }
+    .pre-filled-role { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+    .alert { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; margin-bottom: 16px; }
+    .alert-error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    .alert-success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+  </style>
+</head>
+<body>
+<div class="login-page">
+  <div class="login-wrapper">
+    <div class="login-brand">
+      <div class="login-brand-icon {% if is_superadmin %}superadmin{% endif %}">
+        {% if is_superadmin %}S{% else %}A{% endif %}
+      </div>
+      <span class="login-brand-name">AdminPanel</span>
+    </div>
+
+    <div class="login-card">
+      {% if is_superadmin %}
+      <span class="login-badge superadmin">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Super Admin Access
+      </span>
+      {% else %}
+      <span class="login-badge admin">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Admin Access
+      </span>
+      {% endif %}
+
+      <h1 class="login-title">Sign in to Admin</h1>
+      <p class="login-subtitle">Enter your credentials to access the admin panel.</p>
+
+      {% if prefill_username %}
+      <div class="pre-filled-user">
+        <div class="pre-filled-avatar {% if is_superadmin %}superadmin{% endif %}">
+          {{ prefill_username[0].upper() }}
+        </div>
+        <div class="pre-filled-info">
+          <div class="pre-filled-name">{{ prefill_username }}</div>
+          <div class="pre-filled-role">{% if is_superadmin %}Super Administrator{% else %}Administrator{% endif %}</div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% for cat, msg in messages %}
+      <div class="alert alert-{{ 'error' if cat in ('error','danger') else cat }}">{{ msg }}</div>
+      {% endfor %}
+
+      <form method="POST" action="{{ url_for('admin_login') }}">
+        {% if not prefill_username %}
+        <div class="login-field">
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" class="login-input" placeholder="Admin username" autocomplete="username" required autofocus>
+        </div>
+        {% else %}
+        <input type="hidden" name="username" value="{{ prefill_username }}">
+        {% endif %}
+
+        <div class="login-field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" class="login-input" placeholder="Enter your password" autocomplete="current-password" required {% if not prefill_username %}{% else %}autofocus{% endif %}>
+        </div>
+
+        <button type="submit" class="login-btn {% if is_superadmin %}superadmin{% endif %}">
+          Sign in
+        </button>
+      </form>
+
+      <div class="login-divider"></div>
+
+      <a href="{{ url_for('signin') }}" class="login-back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+        Back to main site
+      </a>
+    </div>
+  </div>
+</div>
+</body>
+</html>

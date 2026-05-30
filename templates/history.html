@@ -2,49 +2,46 @@
 {% block title %}Health History — Medicare{% endblock %}
 
 {% block content %}
-<section class="page-hero page-hero-blue">
-  <div class="page-hero-container">
-    <h1>📋 Health History</h1>
-    <p>Your personal medicine search history — every search saved and searchable.</p>
-  </div>
-</section>
+<section class="dashboard-section">
+  <div class="dashboard-container">
 
-<section class="history-section">
-  <div class="section-container">
-    <div class="history-controls">
-      <input type="text" id="historySearch" class="search-input" placeholder="🔍  Search history..." />
-      <div class="history-actions">
-        <span class="record-count">{{ records|length }} records</span>
-        {% if records %}
-        <a href="{{ url_for('download_history') }}" class="btn btn-outline btn-sm">⬇ Download CSV</a>
-        {% endif %}
+    <div class="dashboard-header">
+      <div class="welcome-left">
+        <div class="welcome-avatar">📋</div>
+        <div>
+          <h1>Health <span class="gradient-text">History</span></h1>
+          <p>Your complete medicine search history.</p>
+        </div>
       </div>
+      {% if records %}
+      <a href="{{ url_for('download_history') }}" class="btn btn-primary" style="align-self:center">
+        ⬇ Download CSV
+      </a>
+      {% endif %}
     </div>
 
     {% if records %}
-    <div class="history-table-wrapper">
-      <table class="history-table" id="historyTable">
+    <div class="recent-table-wrapper">
+      <table class="recent-table">
         <thead>
           <tr>
             <th>#</th>
             <th>Condition</th>
             <th>Suggestions</th>
-            <th>Symptoms</th>
             <th>Date &amp; Time</th>
           </tr>
         </thead>
-        <tbody id="historyBody">
+        <tbody>
           {% for r in records %}
-          <tr class="history-row">
-            <td class="row-num">{{ loop.index }}</td>
+          <tr>
+            <td class="text-muted" style="font-size:13px">{{ loop.index }}</td>
             <td><span class="condition-badge">{{ r.problem | title }}</span></td>
-            <td class="suggestions-cell"><span class="suggestions-text">{{ r.suggestions }}</span></td>
-            <td class="symptoms-cell"><span class="symptoms-text">{{ r.symptoms[:60] if r.symptoms else '—' }}{% if r.symptoms and r.symptoms|length > 60 %}...{% endif %}</span></td>
-            <td class="date-cell">
-              {% if r.searched_at %}
-                <span class="date-badge">{{ r.searched_at.strftime('%d %b %Y') }}</span>
-                <span class="time-text">{{ r.searched_at.strftime('%I:%M %p') }}</span>
-              {% else %}—{% endif %}
+            <td style="max-width:340px;font-size:13.5px;color:var(--gray-600)">
+              {{ r.suggestions[:100] }}{% if r.suggestions|length > 100 %}…{% endif %}
+            </td>
+            <td>
+              <span class="date-badge">{{ r.searched_at.strftime('%d %b %Y') if r.searched_at else '—' }}</span>
+              <span class="time-text">{{ r.searched_at.strftime('%I:%M %p') if r.searched_at else '' }}</span>
             </td>
           </tr>
           {% endfor %}
@@ -53,24 +50,13 @@
     </div>
     {% else %}
     <div class="empty-state">
-      <span class="empty-icon">📋</span>
-      <h3>No health history yet</h3>
-      <p>Your medicine searches will appear here. Start by searching for a condition.</p>
-      <a href="{{ url_for('medicine') }}" class="btn btn-primary">Search Medicine</a>
+      <span class="empty-icon">🔍</span>
+      <h3>No history yet</h3>
+      <p>Start by searching for a health condition in Medicine Suggestions.</p>
+      <a href="{{ url_for('medicine') }}" class="btn btn-primary">Try Medicine Suggestions</a>
     </div>
     {% endif %}
+
   </div>
 </section>
-
-<script>
-  const hs = document.getElementById('historySearch');
-  if (hs) {
-    hs.addEventListener('input', function() {
-      const q = this.value.toLowerCase();
-      document.querySelectorAll('.history-row').forEach(row => {
-        row.style.display = (!q || row.textContent.toLowerCase().includes(q)) ? '' : 'none';
-      });
-    });
-  }
-</script>
 {% endblock %}

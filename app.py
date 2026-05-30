@@ -4,17 +4,249 @@ import random
 import csv
 import io
 from functools import wraps
+from datetime import datetime, timedelta
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import bcrypt as _bcrypt
+import webauthn
+from datetime import datetime, timezone
+
+
+
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, flash, Response
+    session, flash, Response, jsonify
 )
+from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+
+try:
+    from webauthn import (
+        generate_registration_options,
+        verify_registration_response,
+        generate_authentication_options,
+        verify_authentication_response,
+    )
+    from webauthn.helpers.structs import (
+        AuthenticatorSelectionCriteria,
+        ResidentKeyRequirement,
+        UserVerificationRequirement,
+        AuthenticatorAttachment,
+        PublicKeyCredentialDescriptor,
+    )
+    from webauthn.helpers.cose import COSEAlgorithmIdentifier
+    from webauthn.helpers import bytes_to_base64url, base64url_to_bytes
+    WEBAUTHN_AVAILABLE = True
+except Exception:
+    WEBAUTHN_AVAILABLE = False
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "medicare-dev-secret-key-2024")
+
+# ── Admin Panel SQLAlchemy DB (SQLite) ─────────────────────────────────────────
+app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql+psycopg2://medicare_user:d7gaTAaBVVS4c5bGmwvCilMnACC9r6tz@dpg-d85efkgjs32c73aftmbg-a.virginia-postgres.render.com/medicare_f2fm"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+admin_db = SQLAlchemy(app)
+
+# ── Admin Panel Models ─────────────────────────────────────────────────────────
+
+class AdminAccount(admin_db.Model):
+    __tablename__ = "admin_accounts"
+    id = admin_db.Column(admin_db.Integer, primary_key=True)
+    username = admin_db.Column(admin_db.String(80), unique=True, nullable=False)
+    display_name = admin_db.Column(admin_db.String(120), nullable=False, default="")
+    role = admin_db.Column(admin_db.String(20), nullable=False, default="admin")
+    password_hash = admin_db.Column(admin_db.String(255), nullable=False)
+    pin_hash = admin_db.Column(admin_db.String(255), nullable=True)
+    webauthn_credential_id = admin_db.Column(admin_db.Text, nullable=True)
+    webauthn_public_key = admin_db.Column(admin_db.Text, nullable=True)
+    webauthn_sign_count = admin_db.Column(admin_db.Integer, default=0)
+    created_at = admin_db.Column(admin_db.DateTime, default=datetime.utcnow)
+
+    def check_password(self, password):
+        return _bcrypt.checkpw(password.encode(), self.password_hash.encode())
+
+    def check_pin(self, pin):
+        if not self.pin_hash:
+            return False
+        return _bcrypt.checkpw(pin.encode(), self.pin_hash.encode())
+
+    def has_2fa(self):
+        return bool(self.pin_hash or self.webauthn_credential_id)
+
+    @property
+    def is_superadmin(self):
+        return self.role == "superadmin"
+
+
+class AdminAppUser(admin_db.Model):
+    __tablename__ = "admin_app_users"
+    id = admin_db.Column(admin_db.Integer, primary_key=True)
+    username = admin_db.Column(admin_db.String(80), unique=True, nullable=False)
+    email = admin_db.Column(admin_db.String(120), unique=True, nullable=False)
+    password_hash = admin_db.Column(admin_db.String(255), nullable=False)
+    role = admin_db.Column(admin_db.String(20), default="user")
+    status = admin_db.Column(admin_db.String(20), default="active")
+    created_at = admin_db.Column(admin_db.DateTime, default=datetime.utcnow)
+    searches = admin_db.relationship(
+        "AdminSearchHistory", backref="user", lazy=True, cascade="all, delete-orphan"
+    )
+
+    @property
+    def search_count(self):
+        return len(self.searches)
+
+
+class AdminSearchHistory(admin_db.Model):
+    __tablename__ = "admin_search_history"
+    id = admin_db.Column(admin_db.Integer, primary_key=True)
+    user_id = admin_db.Column(admin_db.Integer, admin_db.ForeignKey("admin_app_users.id"), nullable=False)
+    problem = admin_db.Column(admin_db.String(255), nullable=False)
+    category = admin_db.Column(admin_db.String(80), default="general")
+    results_count = admin_db.Column(admin_db.Integer, default=0)
+    searched_at = admin_db.Column(admin_db.DateTime, default=datetime.utcnow)
+
+
+ADMIN_PANEL_ACCOUNTS = [
+    {
+        "username": "shauryagadekar_admin2026",
+        "display_name": "Shaurya Nitin Gadekar",
+        "role": "admin",
+        "password": "nsrshauryagadekar2014",
+    },
+    {
+        "username": "harshthakre_admin2026",
+        "display_name": "Harsh Sanjay Thakre",
+        "role": "admin",
+        "password": "smrharshthakre2013",
+    },
+    {
+        "username": "gadekarshaurya2014",
+        "display_name": "Shaurya Nitin Gadekar (Super Admin)",
+        "role": "superadmin",
+        "password": "shauryagadekar@27052014",
+    },
+    {
+        "username": "admin",
+        "display_name": "Shaurya Nitin Gadekar (Admin)",
+        "role": "admin",
+        "password": "admin123",
+    }
+]
+
+
+def seed_admin_panel():
+    for acc in ADMIN_PANEL_ACCOUNTS:
+        existing = admin_db.session.query(AdminAccount).filter_by(username=acc["username"]).first()
+        if existing:
+            if not existing.display_name:
+                existing.display_name = acc["display_name"]
+        else:
+            pw = _bcrypt.hashpw(acc["password"].encode(), _bcrypt.gensalt()).decode()
+            admin_db.session.add(
+                AdminAccount(
+                    username=acc["username"],
+                    display_name=acc["display_name"],
+                    role=acc["role"],
+                    password_hash=pw,
+                )
+            )
+    if admin_db.session.query(AdminAppUser).count() == 0:
+        import random as _random
+        _random.seed(42)
+        cats = ["health","education","medication","symptoms","treatment","diagnosis","nutrition","fitness","mental-health","general"]
+        qs = ["diabetes symptoms","blood pressure medication","covid vaccine","headache relief","flu treatment","vitamin D benefits","anxiety management","cancer screening","diet plan","exercise routine","sleep disorders","allergy medicine","heart disease prevention","weight loss tips","prenatal care","physical therapy","online courses","math tutoring","science experiments","history lessons","language learning"]
+        for i in range(1, 51):
+            pw = _bcrypt.hashpw(f"user{i}pass".encode(), _bcrypt.gensalt()).decode()
+            u = AdminAppUser(
+                username=f"user{i:03d}",
+                email=f"user{i}@example.com",
+                password_hash=pw,
+                role="admin" if i % 10 == 0 else "user",
+                status="inactive" if i % 7 == 0 else "active",
+                created_at=datetime.now(timezone.utc) - timedelta(days=_random.randint(1, 365)),
+            )
+            admin_db.session.add(u)
+            admin_db.session.flush()
+            for _ in range(_random.randint(0, 30)):
+                admin_db.session.add(
+                    AdminSearchHistory(
+                        user_id=u.id,
+                        problem=_random.choice(qs),
+                        category=_random.choice(cats),
+                        results_count=_random.randint(1, 50),
+                        searched_at=datetime.now(timezone.utc) - timedelta(days=_random.randint(0, 60), hours=_random.randint(0, 23)),
+                    )
+                )
+    admin_db.session.commit()
+
+
+class AdminPaginator:
+    def __init__(self, items, page, per_page, total):
+        self.items = items
+        self.page = page
+        self.per_page = per_page
+        self.total = total
+        self.pages = max(1, (total + per_page - 1) // per_page)
+        self.has_prev = page > 1
+        self.has_next = page < self.pages
+        self.prev_num = page - 1
+        self.next_num = page + 1
+
+    def iter_pages(self, left_edge=1, right_edge=1, left_current=2, right_current=2):
+        last = 0
+        for num in range(1, self.pages + 1):
+            if (num <= left_edge or self.page - left_current - 1 < num < self.page + right_current or num > self.pages - right_edge):
+                if last + 1 != num:
+                    yield None
+                yield num
+                last = num
+
+
+def admin_panel_login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "admin_id" not in session:
+            return redirect(url_for("signin"))
+        if session.get("auth_stage") != "complete":
+            return redirect(url_for("admin_verify_2fa"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_superadmin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "admin_id" not in session:
+            return redirect(url_for("signin"))
+        if session.get("auth_stage") != "complete":
+            return redirect(url_for("admin_verify_2fa"))
+        if session.get("admin_role") != "superadmin":
+            flash("Superadmin access required.", "error")
+            return redirect(url_for("admin_dashboard"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def get_admin_account():
+    if "admin_id" not in session:
+        return None
+    return admin_db.session.get(AdminAccount, session["admin_id"])
+
+
+def get_rp_id():
+    return request.host.split(":")[0]
+
+
+def get_origin():
+    return request.host_url.rstrip("/")
+
+
+# ── Initialize admin panel DB at startup ──────────────────────────────────────
+with app.app_context():
+    admin_db.create_all()
+    seed_admin_panel()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -45,25 +277,25 @@ def init_db():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username VARCHAR(100) UNIQUE NOT NULL,
-            email VARCHAR(255) NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT NOW()
-        )
-    """)
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(100) UNIQUE NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS history (
-            id SERIAL PRIMARY KEY,
-            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-            username VARCHAR(100),
-            problem VARCHAR(255),
-            suggestions TEXT,
-            symptoms TEXT,
-            searched_at TIMESTAMP DEFAULT NOW()
-        )
-    """)
+            CREATE TABLE IF NOT EXISTS history (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                username VARCHAR(100),
+                problem VARCHAR(255),
+                suggestions TEXT,
+                symptoms TEXT,
+                searched_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
     conn.commit()
     cur.close()
     conn.close()
@@ -509,13 +741,11 @@ def signin():
             flash("Incorrect CAPTCHA answer.", "danger")
             return redirect(url_for("signin"))
 
-        # ── Check if admin credentials ──────────────────────────────────────
-        if username in ADMIN_USERS and check_password_hash(ADMIN_USERS[username], password):
-            session.clear()
-            session["is_admin"] = True
-            session["admin_username"] = username
-            session["admin_display"] = ADMIN_DISPLAY.get(username, username)
-            return redirect(url_for("admin_dashboard"))
+        # ── Check if admin username exists → redirect to admin login page ────
+        admin_check = admin_db.session.query(AdminAccount).filter_by(username=username).first()
+        if admin_check:
+            session["admin_prefill"] = username
+            return redirect(url_for("admin_login"))
         # ───────────────────────────────────────────────────────────────────
 
         try:
@@ -1937,15 +2167,17 @@ def medicine():
                 cur = conn.cursor()
 
                 cur.execute("""
-                    INSERT INTO history (
-                        username,
-                        problem,
-                        symptoms,
-                        suggestions,
-                        searched_at
-                    )
-                    VALUES (%s, %s, %s, %s, NOW())
-                """, (
+                                    INSERT INTO history (
+                                        user_id,
+                                        username,
+                                        problem,
+                                        symptoms,
+                                        suggestions,
+                                        searched_at
+                                    )
+                                    VALUES (%s, %s, %s, %s, %s, NOW())
+                                """, (
+                    session.get("user_id"),
                     session["username"],
                     searched_problem,
                     json.dumps(result["symptoms"]),
@@ -2009,241 +2241,710 @@ def download_history():
     )
 
 
-# ─── Hidden Admin Routes ───────────────────────────────────────────────────────
-# These routes do NOT appear in the public UI. No links, no menus, no hints.
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADMIN PANEL ROUTES
+# ═══════════════════════════════════════════════════════════════════════════════
 
-@app.route("/admin")
-@admin_required
-def admin_dashboard():
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if session.get("auth_stage") == "complete" and "admin_id" in session:
+        return redirect(url_for("admin_dashboard"))
 
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    prefill = session.get("admin_prefill", "")
+    is_superadmin = False
+    if prefill:
+        acc = admin_db.session.query(AdminAccount).filter_by(username=prefill).first()
+        is_superadmin = acc.role == "superadmin" if acc else False
 
-    # ========================
-    # TOTAL USERS
-    # ========================
-    cur.execute("SELECT COUNT(*) FROM users")
-    total_users = cur.fetchone()[0]
+    from flask import get_flashed_messages as _gfm
+    messages = _gfm(with_categories=True)
 
-    # ========================
-    # TOTAL HISTORY
-    # ========================
-    cur.execute("SELECT COUNT(*) FROM history")
-    total_history = cur.fetchone()[0]
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        admin_account = admin_db.session.query(AdminAccount).filter_by(username=username).first()
+        if admin_account and admin_account.check_password(password):
+            session.pop("admin_prefill", None)
+            session["admin_id"] = admin_account.id
+            session["admin_username"] = admin_account.username
+            session["admin_display"] = admin_account.display_name
+            session["admin_role"] = admin_account.role
+            if admin_account.has_2fa():
+                session["auth_stage"] = "password_ok"
+                return redirect(url_for("admin_verify_2fa"))
+            else:
+                session["auth_stage"] = "complete"
+                return redirect(url_for("admin_dashboard"))
+        flash("Invalid username or password.", "error")
+        messages = [("error", "Invalid username or password.")]
 
-    # ========================
-    # WEEK SEARCHES
-    # ========================
-    cur.execute("""
-        SELECT COUNT(*)
-        FROM history
-        WHERE searched_at >= NOW() - INTERVAL '7 days'
-    """)
-    week_searches = cur.fetchone()[0]
-
-    # ========================
-    # TOP ACTIVE USERS
-    # ========================
-    cur.execute("""
-        SELECT users.username, COUNT(history.id) AS cnt
-        FROM history
-        JOIN users ON history.username = users.username
-        GROUP BY users.username
-        ORDER BY cnt DESC
-        LIMIT 5
-    """)
-
-    top_users = []
-    for row in cur.fetchall():
-        top_users.append({
-            "username": row[0],
-            "cnt": row[1]
-        })
-
-    # ========================
-    # TOP CONDITIONS
-    # ========================
-    cur.execute("""
-        SELECT problem, COUNT(*) AS cnt
-        FROM history
-        GROUP BY problem
-        ORDER BY cnt DESC
-        LIMIT 5
-    """)
-
-    top_conditions = []
-    for row in cur.fetchall():
-        top_conditions.append({
-            "problem": row[0],
-            "cnt": row[1]
-        })
-
-    # ========================
-    # ALL USERS (FOR TABLE)
-    # ========================
-    cur.execute("""
-        SELECT id, username, email, created_at, password_hash
-        FROM users
-        ORDER BY id ASC
-    """)
-
-    users = []
-    for row in cur.fetchall():
-        users.append({
-            "id": row[0],
-            "username": row[1],
-            "email": row[2],
-            "created_at": row[3],
-            "password_hash": row[4]
-        })
-
-    # ========================
-    # CLOSE DB
-    # ========================
-    cur.close()
-    conn.close()
-
-    # ========================
-    # RENDER TEMPLATE
-    # ========================
     return render_template(
-        "admin_dashboard.html",
-        admin_name=session.get("admin_display"),
-
-        total_users=total_users,
-        total_history=total_history,
-        week_searches=week_searches,
-
-        top_users=top_users,
-        top_conditions=top_conditions,
-
-        users=users
+        "admin/login.html",
+        prefill_username=prefill,
+        is_superadmin=is_superadmin,
+        messages=messages,
     )
+
+
+@app.route("/admin/verify-2fa")
+def admin_verify_2fa():
+    if "admin_id" not in session:
+        return redirect(url_for("signin"))
+    if session.get("auth_stage") == "complete":
+        return redirect(url_for("admin_dashboard"))
+    admin = get_admin_account()
+    has_pin = bool(admin and admin.pin_hash)
+    has_webauthn = bool(admin and admin.webauthn_credential_id)
+    return render_template(
+        "admin/verify_2fa.html",
+        has_pin=has_pin,
+        has_webauthn=has_webauthn,
+        webauthn_available=WEBAUTHN_AVAILABLE,
+    )
+
+
+@app.route("/admin/verify-pin", methods=["POST"])
+def admin_verify_pin():
+    if "admin_id" not in session:
+        return redirect(url_for("signin"))
+    admin = get_admin_account()
+    pin = request.form.get("pin", "")
+    if admin and admin.check_pin(pin):
+        session["auth_stage"] = "complete"
+        return redirect(url_for("admin_dashboard"))
+    flash("Incorrect PIN. Please try again.", "error")
+    return redirect(url_for("admin_verify_2fa"))
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin_id", None)
+    session.pop("admin_username", None)
+    session.pop("admin_display", None)
+    session.pop("admin_role", None)
+    session.pop("auth_stage", None)
+    return redirect(url_for("signin"))
+
+
+# ── Security (own account) ─────────────────────────────────────────────────────
+
+@app.route("/admin/security", methods=["GET"])
+@admin_panel_login_required
+def admin_security():
+    admin = get_admin_account()
+    return render_template(
+        "admin/security.html", admin=admin, webauthn_available=WEBAUTHN_AVAILABLE
+    )
+
+
+@app.route("/admin/setup-pin", methods=["POST"])
+@admin_panel_login_required
+def admin_setup_pin():
+    admin = get_admin_account()
+    pin = request.form.get("pin", "")
+    confirm = request.form.get("confirm_pin", "")
+    if len(pin) < 4 or len(pin) > 8:
+        flash("PIN must be 4–8 digits.", "error")
+        return redirect(url_for("admin_security"))
+    if pin != confirm:
+        flash("PINs do not match.", "error")
+        return redirect(url_for("admin_security"))
+    if not pin.isdigit():
+        flash("PIN must contain digits only.", "error")
+        return redirect(url_for("admin_security"))
+    admin.pin_hash = _bcrypt.hashpw(pin.encode(), _bcrypt.gensalt()).decode()
+    admin_db.session.commit()
+    flash("PIN set up successfully.", "success")
+    return redirect(url_for("admin_security"))
+
+
+@app.route("/admin/remove-pin", methods=["POST"])
+@admin_panel_login_required
+def admin_remove_pin():
+    admin = get_admin_account()
+    admin.pin_hash = None
+    admin_db.session.commit()
+    flash("PIN removed.", "success")
+    return redirect(url_for("admin_security"))
+
+
+# ── WebAuthn ───────────────────────────────────────────────────────────────────
+
+@app.route("/admin/webauthn/register-options", methods=["POST"])
+@admin_panel_login_required
+def admin_webauthn_register_options():
+    if not WEBAUTHN_AVAILABLE:
+        return jsonify({"error": "WebAuthn not available"}), 500
+    admin = get_admin_account()
+    opts = generate_registration_options(
+        rp_id=get_rp_id(),
+        rp_name="AdminPanel",
+        user_id=str(admin.id).encode(),
+        user_name=admin.username,
+        user_display_name=admin.display_name or admin.username,
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            authenticator_attachment=AuthenticatorAttachment.PLATFORM,
+            resident_key=ResidentKeyRequirement.REQUIRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
+        ),
+        supported_pub_key_algs=[COSEAlgorithmIdentifier.ECDSA_SHA_256],
+    )
+    session["webauthn_reg_challenge"] = bytes_to_base64url(opts.challenge)
+    import webauthn as _wa
+    return jsonify(json.loads(_wa.options_to_json(opts)))
+
+
+@app.route("/admin/webauthn/register-verify", methods=["POST"])
+@admin_panel_login_required
+def admin_webauthn_register_verify():
+    if not WEBAUTHN_AVAILABLE:
+        return jsonify({"error": "WebAuthn not available"}), 500
+    admin = get_admin_account()
+    try:
+        challenge = base64url_to_bytes(session.get("webauthn_reg_challenge", ""))
+        credential = request.json
+        verification = verify_registration_response(
+            credential=credential,
+            expected_rp_id=get_rp_id(),
+            expected_origin=get_origin(),
+            expected_challenge=challenge,
+            require_user_verification=True,
+        )
+        admin.webauthn_credential_id = bytes_to_base64url(verification.credential_id)
+        admin.webauthn_public_key = bytes_to_base64url(verification.credential_public_key)
+        admin.webauthn_sign_count = verification.sign_count
+        admin_db.session.commit()
+        return jsonify({"verified": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/admin/webauthn/auth-options", methods=["POST"])
+def admin_webauthn_auth_options():
+    if not WEBAUTHN_AVAILABLE:
+        return jsonify({"error": "WebAuthn not available"}), 500
+    admin_id = session.get("admin_id")
+    if not admin_id:
+        return jsonify({"error": "Not authenticated"}), 401
+    admin = admin_db.session.get(AdminAccount, admin_id)
+    if not admin or not admin.webauthn_credential_id:
+        return jsonify({"error": "No credential registered"}), 400
+    opts = generate_authentication_options(
+        rp_id=get_rp_id(),
+        allow_credentials=[
+            PublicKeyCredentialDescriptor(id=base64url_to_bytes(admin.webauthn_credential_id))
+        ],
+        user_verification=UserVerificationRequirement.REQUIRED,
+    )
+    session["webauthn_auth_challenge"] = bytes_to_base64url(opts.challenge)
+    import webauthn as _wa
+    return jsonify(json.loads(_wa.options_to_json(opts)))
+
+
+@app.route("/admin/webauthn/auth-verify", methods=["POST"])
+def admin_webauthn_auth_verify():
+    if not WEBAUTHN_AVAILABLE:
+        return jsonify({"error": "WebAuthn not available"}), 500
+    admin_id = session.get("admin_id")
+    if not admin_id:
+        return jsonify({"error": "Not authenticated"}), 401
+    admin = admin_db.session.get(AdminAccount, admin_id)
+    try:
+        challenge = base64url_to_bytes(session.get("webauthn_auth_challenge", ""))
+        credential = request.json
+        verification = verify_authentication_response(
+            credential=credential,
+            expected_rp_id=get_rp_id(),
+            expected_origin=get_origin(),
+            expected_challenge=challenge,
+            credential_public_key=base64url_to_bytes(admin.webauthn_public_key),
+            credential_current_sign_count=admin.webauthn_sign_count,
+            require_user_verification=True,
+        )
+        admin.webauthn_sign_count = verification.new_sign_count
+        admin_db.session.commit()
+        session["auth_stage"] = "complete"
+        return jsonify({"verified": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/admin/webauthn/remove", methods=["POST"])
+@admin_panel_login_required
+def admin_webauthn_remove():
+    admin = get_admin_account()
+    admin.webauthn_credential_id = None
+    admin.webauthn_public_key = None
+    admin.webauthn_sign_count = 0
+    admin_db.session.commit()
+    flash("Biometric credential removed.", "success")
+    return redirect(url_for("admin_security"))
+
+
+# ── Superadmin panel ───────────────────────────────────────────────────────────
+
+@app.route("/admin/superadmin")
+@admin_superadmin_required
+def admin_superadmin_panel():
+    admins = admin_db.session.query(AdminAccount).order_by(AdminAccount.role.desc(), AdminAccount.id).all()
+    return render_template("admin/superadmin.html", admins=admins)
+
+
+@app.route("/admin/superadmin/admin/<int:admin_id>/reset-password", methods=["POST"])
+@admin_superadmin_required
+def admin_sa_reset_password(admin_id):
+    target = admin_db.session.get(AdminAccount, admin_id)
+    if not target:
+        flash("Admin not found.", "error")
+        return redirect(url_for("admin_superadmin_panel"))
+    if target.role == "superadmin" and target.id != session["admin_id"]:
+        flash("Cannot change another superadmin's password.", "error")
+        return redirect(url_for("admin_superadmin_panel"))
+    new_pw = request.form.get("new_password", "")
+    confirm = request.form.get("confirm_password", "")
+    if len(new_pw) < 6:
+        flash("Password must be at least 6 characters.", "error")
+        return redirect(url_for("admin_superadmin_panel"))
+    if new_pw != confirm:
+        flash("Passwords do not match.", "error")
+        return redirect(url_for("admin_superadmin_panel"))
+    target.password_hash = _bcrypt.hashpw(new_pw.encode(), _bcrypt.gensalt()).decode()
+    admin_db.session.commit()
+    flash(f"Password updated for {target.display_name}.", "success")
+    return redirect(url_for("admin_superadmin_panel"))
+
+
+@app.route("/admin/superadmin/admin/<int:admin_id>/reset-pin", methods=["POST"])
+@admin_superadmin_required
+def admin_sa_reset_pin(admin_id):
+    target = admin_db.session.get(AdminAccount, admin_id)
+    if not target:
+        flash("Admin not found.", "error")
+        return redirect(url_for("admin_superadmin_panel"))
+    new_pin = request.form.get("new_pin", "")
+    if not new_pin.isdigit() or len(new_pin) < 4 or len(new_pin) > 8:
+        flash("PIN must be 4–8 digits.", "error")
+        return redirect(url_for("admin_superadmin_panel"))
+    target.pin_hash = _bcrypt.hashpw(new_pin.encode(), _bcrypt.gensalt()).decode()
+    admin_db.session.commit()
+    flash(f"PIN updated for {target.display_name}.", "success")
+    return redirect(url_for("admin_superadmin_panel"))
+
+
+@app.route("/admin/superadmin/admin/<int:admin_id>/remove-pin", methods=["POST"])
+@admin_superadmin_required
+def admin_sa_remove_pin(admin_id):
+    target = admin_db.session.get(AdminAccount, admin_id)
+    if not target:
+        flash("Admin not found.", "error")
+        return redirect(url_for("admin_superadmin_panel"))
+    target.pin_hash = None
+    admin_db.session.commit()
+    flash(f"PIN removed for {target.display_name}.", "success")
+    return redirect(url_for("admin_superadmin_panel"))
+
+
+@app.route("/admin/superadmin/admin/<int:admin_id>/remove-biometric", methods=["POST"])
+@admin_superadmin_required
+def admin_sa_remove_biometric(admin_id):
+    target = admin_db.session.get(AdminAccount, admin_id)
+    if not target:
+        flash("Admin not found.", "error")
+        return redirect(url_for("admin_superadmin_panel"))
+    target.webauthn_credential_id = None
+    target.webauthn_public_key = None
+    target.webauthn_sign_count = 0
+    admin_db.session.commit()
+    flash(f"Biometric removed for {target.display_name}.", "success")
+    return redirect(url_for("admin_superadmin_panel"))
+
+
+@app.route("/admin/superadmin/admin/<int:admin_id>/delete", methods=["POST"])
+@admin_superadmin_required
+def admin_sa_delete_admin(admin_id):
+    target = admin_db.session.get(AdminAccount, admin_id)
+    if not target:
+        flash("Admin not found.", "error")
+        return redirect(url_for("admin_superadmin_panel"))
+    if target.role == "superadmin":
+        flash("Cannot remove a superadmin account.", "error")
+        return redirect(url_for("admin_superadmin_panel"))
+    if target.id == session["admin_id"]:
+        flash("You cannot delete your own account.", "error")
+        return redirect(url_for("admin_superadmin_panel"))
+    admin_db.session.delete(target)
+    admin_db.session.commit()
+    flash(f"Admin '{target.display_name}' has been removed.", "success")
+    return redirect(url_for("admin_superadmin_panel"))
+
+
+# ── Dashboard & data pages ─────────────────────────────────────────────────────
+
+def _make_user(row, search_count=0):
+    """Wrap a real 'users' table row into a dot-accessible object for templates."""
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        id=row["id"],
+        username=row["username"],
+        email=row["email"],
+        role="user",
+        status="active",
+        search_count=search_count,
+        created_at=row["created_at"],
+    )
+
+
+def _make_search(row):
+    """Wrap a real 'history' table row into a dot-accessible object for templates."""
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        id=row["id"],
+        user_id=row["user_id"],
+        problem=row["problem"],
+        category="general",
+        results_count="-",
+        searched_at=row["searched_at"],
+        user=SimpleNamespace(username=row["username"] or ""),
+    )
+
+
+@app.route("/admin/dashboard")
+@admin_panel_login_required
+def admin_dashboard():
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        cur.execute("SELECT COUNT(*) FROM users")
+        total_users = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM history")
+        total_searches = cur.fetchone()[0]
+
+        cur.execute("""
+            SELECT COUNT(DISTINCT user_id) FROM history
+            WHERE searched_at >= NOW() - INTERVAL '30 days' AND user_id IS NOT NULL
+        """)
+        active_30 = cur.fetchone()[0]
+
+        cur.execute("""
+            SELECT DATE(searched_at) AS day, COUNT(*) AS cnt
+            FROM history
+            WHERE searched_at >= NOW() - INTERVAL '30 days'
+            GROUP BY DATE(searched_at)
+        """)
+        day_map = {str(r["day"]): r["cnt"] for r in cur.fetchall()}
+
+        daily_counts, labels = [], []
+        for i in range(29, -1, -1):
+            day = (datetime.now(timezone.utc) - timedelta(days=i)).date()
+            labels.append(day.strftime("%b %d"))
+            daily_counts.append(day_map.get(str(day), 0))
+
+        cur.execute("""
+            SELECT problem, COUNT(*) AS cnt
+            FROM history
+            GROUP BY problem
+            ORDER BY cnt DESC
+            LIMIT 10
+        """)
+        top_keywords = [(r["problem"], r["cnt"]) for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT problem AS category, COUNT(*) AS cnt
+            FROM history
+            GROUP BY problem
+            ORDER BY cnt DESC
+            LIMIT 10
+        """)
+        category_counts = [(r["category"], r["cnt"]) for r in cur.fetchall()]
+
+        cur.close()
+        conn.close()
+    except Exception:
+        total_users = total_searches = active_30 = 0
+        daily_counts = [0] * 30
+        labels = [(datetime.now(timezone.utc) - timedelta(days=i)).strftime("%b %d") for i in range(29, -1, -1)]
+        top_keywords = []
+        category_counts = []
+
+    avg_searches = round(total_searches / total_users, 1) if total_users else 0
+    return render_template(
+        "admin/dashboard.html",
+        total_users=total_users,
+        total_searches=total_searches,
+        avg_searches=avg_searches,
+        active_30=active_30,
+        daily_counts=json.dumps(daily_counts),
+        labels=json.dumps(labels),
+        top_keywords=top_keywords,
+        category_counts=category_counts,
+    )
+
 
 @app.route("/admin/users")
+@admin_panel_login_required
 def admin_users():
+    page = request.args.get("page", 1, type=int)
+    search = request.args.get("search", "").strip()
+    per_page = 15
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+        where = ""
+        params = []
+        if search:
+            where = "WHERE username ILIKE %s OR email ILIKE %s"
+            params = [f"%{search}%", f"%{search}%"]
 
-    cur.execute("""
-        SELECT username, email, created_at, password_hash
-        FROM users
-        ORDER BY created_at DESC
-    """)
+        cur.execute(f"SELECT COUNT(*) FROM users {where}", params)
+        total = cur.fetchone()[0]
 
-    users = cur.fetchall()
+        cur.execute(
+            f"SELECT * FROM users {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            params + [per_page, (page - 1) * per_page],
+        )
+        rows = cur.fetchall()
 
-    cur.close()
-    conn.close()
+        user_list = []
+        for row in rows:
+            cur.execute("SELECT COUNT(*) FROM history WHERE user_id = %s", (row["id"],))
+            sc = cur.fetchone()[0]
+            user_list.append(_make_user(row, sc))
 
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    cur.execute("SELECT COUNT(*) AS count FROM users")
-    total_users = cur.fetchone()["count"]
-
-    cur.execute("SELECT COUNT(*) AS count FROM history")
-    total_history = cur.fetchone()["count"]
-
-    cur.close()
-    conn.close()
-
-    return render_template(
-        "admin_users.html",
-        users=users
-    )
-
-@app.route("/admin/history")
-def admin_history():
-
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    cur.execute("""
-        SELECT 
-            history.id,
-            history.username,
-            history.problem,
-            history.symptoms,
-            history.suggestions,
-            history.searched_at
-        FROM history
-        ORDER BY history.searched_at DESC
-    """)
-
-    history = cur.fetchall()
-
-    cur.close()
-    conn.close()
+        cur.close()
+        conn.close()
+    except Exception:
+        total = 0
+        user_list = []
 
     return render_template(
-        "admin_history.html",
-        history=history
+        "admin/users.html",
+        users=user_list,
+        pagination=AdminPaginator(user_list, page, per_page, total),
+        search=search,
+        status_filter="",
     )
 
-@app.route("/admin/download/users")
-@admin_required
-def admin_download_users():
+
+@app.route("/admin/users/export")
+@admin_panel_login_required
+def admin_export_users():
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT * FROM users ORDER BY created_at DESC")
+        rows = cur.fetchall()
+        out = io.StringIO()
+        w = csv.writer(out)
+        w.writerow(["ID", "Username", "Email", "Joined"])
+        for row in rows:
+            cur.execute("SELECT COUNT(*) FROM history WHERE user_id = %s", (row["id"],))
+            sc = cur.fetchone()[0]
+            w.writerow([row["id"], row["username"], row["email"], row["created_at"].strftime("%Y-%m-%d")])
+        cur.close()
+        conn.close()
+        out.seek(0)
+        return Response(out.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=users.csv"})
+    except Exception:
+        return "Export failed", 500
+
+
+@app.route("/admin/users/<int:user_id>")
+@admin_panel_login_required
+def admin_user_detail(user_id):
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+        urow = cur.fetchone()
+        if not urow:
+            cur.close(); conn.close()
+            return "User not found", 404
+
+        cur.execute("SELECT COUNT(*) FROM history WHERE user_id = %s", (user_id,))
+        sc = cur.fetchone()[0]
+        user = _make_user(urow, sc)
+
+        cur.execute("""
+            SELECT problem AS category, COUNT(*) AS cnt
+            FROM history WHERE user_id = %s
+            GROUP BY problem ORDER BY cnt DESC LIMIT 10
+        """, (user_id,))
+        cat_breakdown = [(r["category"], r["cnt"]) for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT * FROM history
+            WHERE user_id = %s AND searched_at >= NOW() - INTERVAL '30 days'
+            ORDER BY searched_at DESC LIMIT 20
+        """, (user_id,))
+        recent = [_make_search(r) for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT DATE(searched_at) AS day, COUNT(*) AS cnt
+            FROM history WHERE user_id = %s
+            AND searched_at >= NOW() - INTERVAL '30 days'
+            GROUP BY DATE(searched_at)
+        """, (user_id,))
+        day_map = {str(r["day"]): r["cnt"] for r in cur.fetchall()}
+
+        daily_counts, labels = [], []
+        for i in range(29, -1, -1):
+            day = (datetime.now(timezone.utc) - timedelta(days=i)).date()
+            labels.append(day.strftime("%b %d"))
+            daily_counts.append(day_map.get(str(day), 0))
+
+        cur.close()
+        conn.close()
+    except Exception:
+        return "Error loading user", 500
+
+    return render_template(
+        "admin/admin_user_detail.html",
+        user=user,
+        category_breakdown=cat_breakdown,
+        recent_searches=recent,
+        daily_counts=json.dumps(daily_counts),
+        labels=json.dumps(labels),
+    )
+
+
+@app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+@admin_panel_login_required
+def admin_delete_user(user_id):
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT username FROM users WHERE id = %s", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            flash("User not found.", "error")
+            cur.close(); conn.close()
+            return redirect(url_for("admin_users"))
+        username = row["username"]
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        flash(f"User '{username}' has been deleted.", "success")
+    except Exception:
+        flash("Failed to delete user.", "error")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/search-history")
+@admin_panel_login_required
+def admin_search_history():
+    page = request.args.get("page", 1, type=int)
+    search_term = request.args.get("search", "").strip()
+    per_page = 20
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        where = ""
+        params = []
+        if search_term:
+            where = "WHERE h.problem ILIKE %s"
+            params = [f"%{search_term}%"]
+
+        cur.execute(
+            f"SELECT COUNT(*) FROM history h {where}", params
+        )
+        total = cur.fetchone()[0]
+
+        cur.execute(
+            f"""SELECT h.*, u.username AS uname FROM history h
+                LEFT JOIN users u ON u.id = h.user_id
+                {where}
+                ORDER BY h.searched_at DESC LIMIT %s OFFSET %s""",
+            params + [per_page, (page - 1) * per_page],
+        )
+        rows = cur.fetchall()
+        searches = []
+        for r in rows:
+            from types import SimpleNamespace
+            s = SimpleNamespace(
+                id=r["id"],
+                user_id=r["user_id"],
+                problem=r["problem"],
+                category="general",
+                results_count="-",
+                searched_at=r["searched_at"],
+                user=SimpleNamespace(username=r["uname"] or r["username"] or ""),
+            )
+            searches.append(s)
+
+        cur.close()
+        conn.close()
+    except Exception:
+        total = 0
+        searches = []
+
+    return render_template(
+        "admin/search_history.html",
+        searches=searches,
+        pagination=AdminPaginator(searches, page, per_page, total),
+        search=search_term,
+        category="",
+        categories=[],
+    )
+
+
+@app.route("/admin/search-history/export")
+@admin_panel_login_required
+def admin_export_searches():
+    fmt = request.args.get("format", "csv")
     try:
         conn = get_db()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute("""
-            SELECT id, username, email, created_at
-            FROM users
-            ORDER BY created_at DESC
+            SELECT h.id, h.username, h.problem, h.searched_at,
+                   u.username AS uname
+            FROM history h
+            LEFT JOIN users u ON u.id = h.user_id
+            ORDER BY h.searched_at DESC
         """)
-        users = cur.fetchall()
+        rows = cur.fetchall()
         cur.close()
         conn.close()
     except Exception:
-        users = []
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["ID", "Username", "Email", "Created At"])
-    for u in users:
-        writer.writerow([u["id"], u["username"], u["email"], u["created_at"]])
-    output.seek(0)
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=medicare_users.csv"}
-    )
+        rows = []
 
+    if fmt == "json":
+        data = [
+            {
+                "id": r["id"],
+                "username": r["uname"] or r["username"] or "",
+                "problem": r["problem"],
+                "searched_at": r["searched_at"].isoformat() if r["searched_at"] else "",
+            }
+            for r in rows
+        ]
+        return Response(json.dumps(data, indent=2), mimetype="application/json",
+                        headers={"Content-Disposition": "attachment; filename=search_history.json"})
 
-@app.route("/admin/download/history")
-@admin_required
-def admin_download_history():
-    try:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute("SELECT * FROM history ORDER BY searched_at DESC")
-        records = cur.fetchall()
-        cur.close()
-        conn.close()
-    except Exception:
-        records = []
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["ID", "Username", "Problem", "Suggestions", "Symptoms",  "Searched At"])
-    for r in records:
-        writer.writerow([r["id"], r["username"], r["problem"], r["suggestions"], r["symptoms"], r["searched_at"]])
-    output.seek(0)
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=medicare_history.csv"}
-    )
-
-
-@app.route("/admin/logout")
-@admin_required
-def admin_logout():
-    session.clear()
-    return redirect(url_for("index"))
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["ID", "Username", "Problem", "Searched At"])
+    for r in rows:
+        w.writerow([
+            r["id"],
+            r["uname"] or r["username"] or "",
+            r["problem"],
+            r["searched_at"].strftime("%Y-%m-%d %H:%M") if r["searched_at"] else "",
+        ])
+    out.seek(0)
+    return Response(out.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=search_history.csv"})
 
 
 if __name__ == "__main__":
     init_db()
-    port = int(os.environ.get("PORT", 8000))
+    with app.app_context():
+        admin_db.create_all()
+        seed_admin_panel()
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)

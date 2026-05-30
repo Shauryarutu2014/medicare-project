@@ -1,0 +1,127 @@
+{% extends "admin/base.html" %}
+{% block title %}Manage Admins — AdminPanel{% endblock %}
+{% block page_title %}Manage Admins{% endblock %}
+
+{% block content %}
+<p style="font-size:13.5px;color:var(--text-muted);margin-top:-8px;margin-bottom:4px">
+  Manage admin accounts — reset passwords, PINs, biometrics, or remove admins.
+</p>
+
+<div style="display:flex;flex-direction:column;gap:12px">
+  {% for adm in admins %}
+  <div style="background:var(--surface);border:1px solid {% if adm.role=='superadmin' %}#e9d5ff{% else %}var(--border){% endif %};border-radius:var(--radius);padding:20px;box-shadow:var(--shadow-sm)">
+
+    <!-- Header row -->
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap">
+      <div style="width:42px;height:42px;border-radius:50%;background:{% if adm.role=='superadmin' %}#f3e8ff{% else %}var(--primary-light){% endif %};color:{% if adm.role=='superadmin' %}#7c3aed{% else %}var(--primary){% endif %};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0">
+        {{ adm.display_name[0].upper() }}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700;color:var(--text)">{{ adm.display_name }}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:1px;font-family:monospace">{{ adm.username }}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <span class="badge" style="background:{% if adm.role=='superadmin' %}#f3e8ff{% else %}var(--primary-light){% endif %};color:{% if adm.role=='superadmin' %}#7c3aed{% else %}var(--primary){% endif %}">
+          {% if adm.role=='superadmin' %}Super Admin{% else %}Admin{% endif %}
+        </span>
+        {% if adm.pin_hash %}
+        <span class="badge badge-active">PIN set</span>
+        {% else %}
+        <span class="badge badge-inactive">No PIN</span>
+        {% endif %}
+        {% if adm.webauthn_credential_id %}
+        <span class="badge badge-active">Biometric set</span>
+        {% else %}
+        <span class="badge badge-inactive">No Biometric</span>
+        {% endif %}
+        {% if adm.id == session.get('admin_id') %}
+        <span class="badge" style="background:#fffbeb;color:#d97706;border:1px solid #fde68a">You</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Action rows -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
+
+      <!-- Reset password -->
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px" id="pw-{{ adm.id }}">
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Reset Password</div>
+        <form method="POST" action="{{ url_for('admin_sa_reset_password', admin_id=adm.id) }}">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <input class="input" type="password" name="new_password" placeholder="New password (min 6 chars)" required minlength="6" style="height:34px;font-size:13px">
+            <input class="input" type="password" name="confirm_password" placeholder="Confirm password" required minlength="6" style="height:34px;font-size:13px">
+            <button type="submit" class="btn btn-default btn-sm" style="width:100%;justify-content:center">Set Password</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Reset PIN -->
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px">
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">PIN</div>
+        <form method="POST" action="{{ url_for('admin_sa_reset_pin', admin_id=adm.id) }}" style="margin-bottom:6px">
+          <div style="display:flex;gap:6px">
+            <input class="input" type="password" name="new_pin" placeholder="New PIN (4–8 digits)" maxlength="8" pattern="[0-9]{4,8}" inputmode="numeric" required style="height:34px;font-size:13px;flex:1">
+            <button type="submit" class="btn btn-default btn-sm">Set PIN</button>
+          </div>
+        </form>
+        {% if adm.pin_hash %}
+        <form method="POST" action="{{ url_for('admin_sa_remove_pin', admin_id=adm.id) }}">
+          <button type="submit" class="btn btn-outline btn-sm" style="width:100%;color:var(--danger);border-color:var(--danger-border)">Remove PIN</button>
+        </form>
+        {% endif %}
+      </div>
+
+      <!-- Biometric + Delete -->
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px">
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Other Actions</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          {% if adm.webauthn_credential_id %}
+          <form method="POST" action="{{ url_for('admin_sa_remove_biometric', admin_id=adm.id) }}">
+            <button type="submit" class="btn btn-outline btn-sm" style="width:100%">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>
+              Remove Biometric
+            </button>
+          </form>
+          {% else %}
+          <button class="btn btn-ghost btn-sm" disabled style="width:100%;opacity:.45">No Biometric Set</button>
+          {% endif %}
+
+          {% if adm.role != 'superadmin' and adm.id != session.get('admin_id') %}
+          <a href="#confirm-del-{{ adm.id }}" class="btn btn-sm" style="width:100%;background:var(--danger-light);color:var(--danger);border:1px solid var(--danger-border);justify-content:center">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+            Remove Admin Account
+          </a>
+          {% else %}
+          <button class="btn btn-ghost btn-sm" disabled style="width:100%;opacity:.4">
+            {{ "Your account" if adm.id == session.get('admin_id') else "Cannot remove superadmin" }}
+          </button>
+          {% endif %}
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Delete confirm overlay -->
+  {% if adm.role != 'superadmin' and adm.id != session.get('admin_id') %}
+  <div class="confirm-overlay" id="confirm-del-{{ adm.id }}">
+    <a href="#" class="confirm-close"></a>
+    <div class="confirm-dialog">
+      <h2 class="confirm-title">Remove admin account?</h2>
+      <p class="confirm-desc">
+        This will permanently remove <strong>{{ adm.display_name }}</strong>
+        (<code>{{ adm.username }}</code>) from the system. This cannot be undone.
+      </p>
+      <div class="confirm-actions">
+        <a href="#" class="btn btn-outline btn-sm">Cancel</a>
+        <form method="POST" action="{{ url_for('admin_sa_delete_admin', admin_id=adm.id) }}" style="display:inline">
+          <button type="submit" class="btn btn-destructive btn-sm">Remove Admin</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% endfor %}
+</div>
+{% endblock %}

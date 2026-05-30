@@ -1,0 +1,150 @@
+{% extends "admin/base.html" %}
+{% block title %}Dashboard — AdminPanel{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<!-- Stats -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-icon stat-icon-blue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    </div>
+    <div class="stat-info">
+      <span class="stat-label">Total Users</span>
+      <span class="stat-value">{{ total_users }}</span>
+      <span class="stat-sub">Registered app users</span>
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon stat-icon-purple">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </div>
+    <div class="stat-info">
+      <span class="stat-label">Total Searches</span>
+      <span class="stat-value">{{ total_searches }}</span>
+      <span class="stat-sub">All-time search queries</span>
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon stat-icon-teal">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    </div>
+    <div class="stat-info">
+      <span class="stat-label">Avg. Searches / User</span>
+      <span class="stat-value">{{ avg_searches }}</span>
+      <span class="stat-sub">Average per user</span>
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon stat-icon-green">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    </div>
+    <div class="stat-info">
+      <span class="stat-label">Active (30 days)</span>
+      <span class="stat-value">{{ active_30 }}</span>
+      <span class="stat-sub">Unique active users</span>
+    </div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="charts-row">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Search Activity</div>
+      <div class="card-description">Daily searches over the last 30 days</div>
+    </div>
+    <div class="card-content">
+      <canvas id="activityChart" height="80"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">By Category</div>
+      <div class="card-description">Search distribution</div>
+    </div>
+    <div class="card-content">
+      <canvas id="categoryChart" height="180"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Top keywords -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Top Keywords</div>
+    <div class="card-description">Most searched terms across all users</div>
+  </div>
+  <div class="card-content">
+    <div class="keywords-list">
+      {% for kw, cnt in top_keywords %}
+      <div class="keyword-row">
+        <span class="keyword-rank">{{ loop.index }}</span>
+        <span class="keyword-text">{{ kw }}</span>
+        <div class="progress-bar-wrap" style="flex:1">
+          <div class="progress-bar" style="width:{{ (cnt / top_keywords[0][1] * 100)|int }}%"></div>
+        </div>
+        <span class="keyword-count">{{ cnt }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.font.size = 12;
+
+new Chart(document.getElementById('activityChart'), {
+  type: 'line',
+  data: {
+    labels: {{ labels|safe }},
+    datasets: [{
+      data: {{ daily_counts|safe }},
+      borderColor: '#4f46e5',
+      backgroundColor: 'rgba(79,70,229,0.08)',
+      borderWidth: 2,
+      fill: true,
+      tension: 0.4,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      pointHoverBackgroundColor: '#4f46e5',
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+    scales: {
+      y: { beginAtZero: true, grid: { color: '#f1f5f9' }, border: { display: false }, ticks: { color: '#94a3b8' } },
+      x: { grid: { display: false }, border: { display: false }, ticks: { color: '#94a3b8', maxTicksLimit: 7 } }
+    }
+  }
+});
+
+const catLabels = [{% for c,_ in category_counts %}'{{ c }}',{% endfor %}];
+const catData   = [{% for _,n in category_counts %}{{ n }},{% endfor %}];
+const palette   = ['#4f46e5','#3b82f6','#8b5cf6','#14b8a6','#22c55e','#f59e0b','#f43f5e','#06b6d4','#a855f7','#10b981'];
+new Chart(document.getElementById('categoryChart'), {
+  type: 'doughnut',
+  data: {
+    labels: catLabels,
+    datasets: [{ data: catData, backgroundColor: palette, borderWidth: 2, borderColor: '#fff' }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10, font: { size: 11 }, color: '#64748b' } }
+    },
+    cutout: '65%'
+  }
+});
+</script>
+{% endblock %}

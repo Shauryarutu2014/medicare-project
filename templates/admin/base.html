@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}AdminPanel{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin_panel/css/style.css') }}?v=4">
+  {% block head %}{% endblock %}
+</head>
+<body>
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      {% if session.get('admin_role') == 'superadmin' %}
+      <div class="brand-icon" style="background:#7c3aed">S</div>
+      {% else %}
+      <div class="brand-icon">A</div>
+      {% endif %}
+      <span class="brand-name">AdminPanel</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('admin_dashboard') }}" class="nav-item {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>Dashboard</span>
+      </a>
+      <a href="{{ url_for('admin_users') }}" class="nav-item {% if request.endpoint in ['admin_users','admin_user_detail'] %}active{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Users</span>
+      </a>
+      <a href="{{ url_for('admin_search_history') }}" class="nav-item {% if request.endpoint == 'admin_search_history' %}active{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span>Search History</span>
+      </a>
+      <a href="{{ url_for('admin_security') }}" class="nav-item {% if request.endpoint == 'admin_security' %}active{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>Security</span>
+      </a>
+
+      {% if session.get('admin_role') == 'superadmin' %}
+      <div style="height:1px;background:var(--border);margin:6px 2px"></div>
+      <a href="{{ url_for('admin_superadmin_panel') }}" class="nav-item {% if request.endpoint == 'admin_superadmin_panel' %}active{% endif %}"
+        style="{% if request.endpoint == 'admin_superadmin_panel' %}background:#f3e8ff;color:#7c3aed{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="2"/></svg>
+        <span>Manage Admins</span>
+      </a>
+      {% endif %}
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="admin-info">
+        <div class="admin-avatar" style="{% if session.get('admin_role') == 'superadmin' %}background:#f3e8ff;color:#7c3aed{% endif %}">
+          {{ (session.get('admin_display') or session.get('admin_username','A'))[0].upper() }}
+        </div>
+        <div class="admin-details">
+          <span class="admin-name">{{ session.get('admin_display') or session.get('admin_username','Admin') }}</span>
+          <span class="admin-role">{% if session.get('admin_role') == 'superadmin' %}Super Admin{% else %}Administrator{% endif %}</span>
+        </div>
+      </div>
+      <a href="{{ url_for('admin_logout') }}" class="logout-btn" title="Sign out">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main-content">
+    <header class="top-bar">
+      <div class="page-title">
+        <h1>{% block page_title %}{% endblock %}</h1>
+      </div>
+      <div class="top-bar-actions">{% block top_actions %}{% endblock %}</div>
+    </header>
+
+    <div class="content-area">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+<script src="{{ url_for('static', filename='admin_panel/js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

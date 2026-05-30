@@ -1,0 +1,117 @@
+{% extends "admin/base.html" %}
+{% block title %}Users — AdminPanel{% endblock %}
+{% block page_title %}Users{% endblock %}
+
+{% block top_actions %}
+<a href="{{ url_for('admin_export_users') }}" class="btn btn-outline btn-sm">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+  Export CSV
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <!-- Filters -->
+  <form method="GET" class="filters-bar">
+    <div class="input-search-wrap">
+      <svg class="input-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" name="search" value="{{ search }}" placeholder="Search users…" class="input input-search">
+    </div>
+    <select name="status" class="select" onchange="this.form.submit()">
+      <option value="">All statuses</option>
+      <option value="active"   {% if status_filter=='active'   %}selected{% endif %}>Active</option>
+      <option value="inactive" {% if status_filter=='inactive' %}selected{% endif %}>Inactive</option>
+    </select>
+    <button type="submit" class="btn btn-default btn-sm">Search</button>
+    {% if search or status_filter %}
+    <a href="{{ url_for('admin_users') }}" class="btn btn-ghost btn-sm">Clear</a>
+    {% endif %}
+    <span style="margin-left:auto;font-size:12.5px;color:var(--text-muted)">{{ pagination.total }} users</span>
+  </form>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Searches</th>
+          <th>Joined</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:28px;height:28px;background:var(--primary-light);border:1px solid var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--primary);flex-shrink:0">{{ u.username[0].upper() }}</div>
+              <span class="font-medium">{{ u.username }}</span>
+            </div>
+          </td>
+          <td class="text-muted">{{ u.email }}</td>
+          <td>
+            <span class="badge {% if u.role=='admin' %}badge-admin{% else %}badge-user{% endif %}">{{ u.role }}</span>
+          </td>
+          <td>
+            <span class="badge {% if u.status=='active' %}badge-active{% else %}badge-inactive{% endif %}">{{ u.status }}</span>
+          </td>
+          <td class="font-medium">{{ u.search_count }}</td>
+          <td class="text-muted">{{ u.created_at.strftime('%b %d, %Y') }}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:4px">
+              <a href="{{ url_for('admin_user_detail', user_id=u.id) }}" class="btn btn-ghost btn-sm">View</a>
+              <a href="#delete-{{ u.id }}" class="btn btn-ghost btn-sm" style="color:var(--danger)">Delete</a>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty-row">No users found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if pagination.pages > 1 %}
+  <div class="pagination">
+    {% if pagination.has_prev %}
+    <a href="{{ url_for('admin_users', page=pagination.prev_num, search=search, status=status_filter) }}" class="page-btn">&lsaquo;</a>
+    {% endif %}
+    {% for p in pagination.iter_pages() %}
+      {% if p %}
+      <a href="{{ url_for('admin_users', page=p, search=search, status=status_filter) }}" class="page-btn {% if p==pagination.page %}page-btn-active{% endif %}">{{ p }}</a>
+      {% else %}
+      <span class="page-ellipsis">…</span>
+      {% endif %}
+    {% endfor %}
+    {% if pagination.has_next %}
+    <a href="{{ url_for('admin_users', page=pagination.next_num, search=search, status=status_filter) }}" class="page-btn">&rsaquo;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Delete confirm dialogs -->
+{% for u in users %}
+<div class="confirm-overlay" id="delete-{{ u.id }}">
+  <a href="#" class="confirm-close"></a>
+  <div class="confirm-dialog">
+    <h2 class="confirm-title">Delete user?</h2>
+    <p class="confirm-desc">
+      This will permanently delete <strong>{{ u.username }}</strong> and all their search history.
+      This action cannot be undone.
+    </p>
+    <div class="confirm-actions">
+      <a href="#" class="btn btn-outline btn-sm">Cancel</a>
+      <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}" style="display:inline">
+        <button type="submit" class="btn btn-destructive btn-sm">Delete user</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,161 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ user.username }} — AdminPanel{% endblock %}
+{% block page_title %}{{ user.username }}{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block top_actions %}
+<a href="{{ url_for('admin_users') }}" class="btn btn-ghost btn-sm">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+  Back to Users
+</a>
+<a href="#delete-user" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger-border)">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+  Delete user
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="user-detail-layout">
+  <!-- Profile sidebar -->
+  <div class="card user-profile-card">
+    <div class="user-avatar-xl">{{ user.username[0].upper() }}</div>
+    <div class="user-profile-name">{{ user.username }}</div>
+    <div class="user-profile-email">{{ user.email }}</div>
+    <div class="user-badges">
+      <span class="badge {% if user.role=='admin' %}badge-admin{% else %}badge-user{% endif %}">{{ user.role }}</span>
+      <span class="badge {% if user.status=='active' %}badge-active{% else %}badge-inactive{% endif %}">{{ user.status }}</span>
+    </div>
+    <div class="divider"></div>
+    <div class="user-meta">
+      <div class="user-meta-row">
+        <span class="user-meta-label">User ID</span>
+        <span class="user-meta-value font-mono">#{{ user.id }}</span>
+      </div>
+      <div class="user-meta-row">
+        <span class="user-meta-label">Joined</span>
+        <span class="user-meta-value">{{ user.created_at.strftime('%b %d, %Y') }}</span>
+      </div>
+      <div class="user-meta-row">
+        <span class="user-meta-label">Total searches</span>
+        <span class="user-meta-value">{{ user.search_count }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right column -->
+  <div class="user-detail-right">
+    <!-- Activity chart -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Search activity</div>
+        <div class="card-description">Last 30 days</div>
+      </div>
+      <div class="card-content">
+        <canvas id="userChart" height="100"></canvas>
+      </div>
+    </div>
+
+    <!-- Category breakdown -->
+    {% if category_breakdown %}
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Searches by category</div>
+      </div>
+      <div class="card-content">
+        <div class="keywords-list">
+          {% for cat, cnt in category_breakdown %}
+          <div class="category-row">
+            <span class="category-name">{{ cat }}</span>
+            <div class="progress-bar-wrap" style="flex:1;min-width:60px">
+              <div class="progress-bar" style="width:{{ (cnt / category_breakdown[0][1] * 100)|int }}%"></div>
+            </div>
+            <span class="keyword-count">{{ cnt }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Recent searches -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Recent searches</div>
+        <div class="card-description">Last 30 days, up to 20 entries</div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Problem</th>
+              <th>Category</th>
+              <th>Results</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in recent_searches %}
+            <tr>
+              <td class="font-medium">{{ s.Problem }}</td>
+              <td><span class="cat-tag">{{ s.category }}</span></td>
+              <td class="text-muted">{{ s.results_count }}</td>
+              <td class="text-muted">{{ s.searched_at.strftime('%b %d, %H:%M') }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="empty-row">No recent searches.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirm dialog -->
+<div class="confirm-overlay" id="delete-user">
+  <a href="#" class="confirm-close"></a>
+  <div class="confirm-dialog">
+    <h2 class="confirm-title">Delete user?</h2>
+    <p class="confirm-desc">
+      This will permanently delete <strong>{{ user.username }}</strong> and all their
+      {{ user.search_count }} search records. This action cannot be undone.
+    </p>
+    <div class="confirm-actions">
+      <a href="#" class="btn btn-outline btn-sm">Cancel</a>
+      <form method="POST" action="{{ url_for('admin_delete_user', user_id=user.id) }}" style="display:inline">
+        <button type="submit" class="btn btn-destructive btn-sm">Delete user</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.font.size = 12;
+new Chart(document.getElementById('userChart'), {
+  type: 'bar',
+  data: {
+    labels: {{ labels|safe }},
+    datasets: [{
+      data: {{ daily_counts|safe }},
+      backgroundColor: 'rgba(79,70,229,0.75)',
+      hoverBackgroundColor: '#4f46e5',
+      borderRadius: 4,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, grid: { color: '#f1f5f9' }, border: { display: false }, ticks: { color: '#94a3b8' } },
+      x: { grid: { display: false }, border: { display: false }, ticks: { color: '#94a3b8', maxTicksLimit: 7 } }
+    }
+  }
+});
+</script>
+{% endblock %}

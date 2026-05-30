@@ -1,0 +1,176 @@
+{% extends "admin/base.html" %}
+{% block title %}Security — AdminPanel{% endblock %}
+{% block page_title %}Security{% endblock %}
+
+{% block content %}
+<p style="font-size:13.5px;color:var(--text-muted);margin-top:-8px;margin-bottom:4px">
+  Manage two-factor authentication methods for your admin account.
+</p>
+
+<div class="security-grid">
+
+  <!-- PIN -->
+  <div class="security-card">
+    <div class="security-card-header">
+      <div class="security-card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <div>
+        <div class="security-card-title">PIN Code</div>
+        <div class="security-card-desc">4–8 digit numeric PIN</div>
+      </div>
+    </div>
+
+    <div class="security-status {{ 'enabled' if admin.pin_hash else 'disabled' }}">
+      {{ "Enabled" if admin.pin_hash else "Not set up" }}
+    </div>
+
+    {% if admin.pin_hash %}
+    <form method="POST" action="{{ url_for('admin_remove_pin') }}">
+      <button type="submit" class="btn btn-outline btn-sm" style="margin-bottom:14px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6m4-6v6"/></svg>
+        Remove PIN
+      </button>
+    </form>
+    {% endif %}
+
+    {% if not admin.pin_hash %}
+    <form method="POST" action="{{ url_for('admin_setup_pin') }}">
+      <div class="form-row">
+        <div>
+          <label class="form-label" style="margin-bottom:4px;display:block">New PIN</label>
+          <input class="input" type="password" name="pin" placeholder="e.g. 1234" maxlength="8" pattern="[0-9]{4,8}" inputmode="numeric" required>
+        </div>
+        <div>
+          <label class="form-label" style="margin-bottom:4px;display:block">Confirm PIN</label>
+          <input class="input" type="password" name="confirm_pin" placeholder="Repeat PIN" maxlength="8" pattern="[0-9]{4,8}" inputmode="numeric" required>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-default btn-sm" style="width:100%">Set up PIN</button>
+    </form>
+    {% else %}
+    <details style="margin-top:4px">
+      <summary style="font-size:12.5px;color:var(--text-muted);cursor:pointer;user-select:none">Change PIN</summary>
+      <form method="POST" action="{{ url_for('admin_setup_pin') }}" style="margin-top:10px">
+        <div class="form-row">
+          <div>
+            <label class="form-label" style="margin-bottom:4px;display:block">New PIN</label>
+            <input class="input" type="password" name="pin" placeholder="4–8 digits" maxlength="8" pattern="[0-9]{4,8}" inputmode="numeric" required>
+          </div>
+          <div>
+            <label class="form-label" style="margin-bottom:4px;display:block">Confirm</label>
+            <input class="input" type="password" name="confirm_pin" placeholder="Repeat" maxlength="8" pattern="[0-9]{4,8}" inputmode="numeric" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-default btn-sm" style="width:100%">Update PIN</button>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+
+  <!-- Biometric / WebAuthn -->
+  <div class="security-card">
+    <div class="security-card-header">
+      <div class="security-card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M8 12c0-2.21 1.79-4 4-4s4 1.79 4 4-1.79 4-4 4"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>
+      </div>
+      <div>
+        <div class="security-card-title">Face ID / Fingerprint</div>
+        <div class="security-card-desc">Device biometric authentication</div>
+      </div>
+    </div>
+
+    <div class="security-status {{ 'enabled' if admin.webauthn_credential_id else 'disabled' }}">
+      {{ "Registered" if admin.webauthn_credential_id else "Not registered" }}
+    </div>
+
+    {% if not webauthn_available %}
+    <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px">
+      WebAuthn library not available. Install <code>webauthn</code> package.
+    </p>
+    {% elif admin.webauthn_credential_id %}
+    <form method="POST" action="{{ url_for('admin_webauthn_remove') }}">
+      <button type="submit" class="btn btn-outline btn-sm" style="margin-bottom:8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+        Remove biometric
+      </button>
+    </form>
+    {% else %}
+    <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px">
+      Register your fingerprint or face to enable biometric login.
+    </p>
+    <button type="button" class="btn btn-default btn-sm" id="register-bio-btn" onclick="registerBiometric()" style="width:100%">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Register Face / Fingerprint
+    </button>
+    <div id="bio-status" style="font-size:12.5px;color:var(--text-muted);margin-top:8px;display:none"></div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function b64url(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+function b64urlDecode(s) {
+  s = s.replace(/-/g,'+').replace(/_/g,'/');
+  while (s.length % 4) s += '=';
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+
+async function registerBiometric() {
+  const btn = document.getElementById('register-bio-btn');
+  const status = document.getElementById('bio-status');
+  btn.disabled = true;
+  btn.textContent = 'Waiting for biometric…';
+  status.style.display = 'block';
+  status.textContent = 'Please follow your device prompt…';
+  try {
+    const optsRes = await fetch("{{ url_for('admin_webauthn_register_options') }}", {
+      method: 'POST', headers: {'Content-Type': 'application/json'}
+    });
+    const opts = await optsRes.json();
+    if (opts.error) throw new Error(opts.error);
+
+    opts.challenge = b64urlDecode(opts.challenge);
+    opts.user.id = b64urlDecode(opts.user.id);
+    if (opts.excludeCredentials) {
+      opts.excludeCredentials = opts.excludeCredentials.map(c => ({...c, id: b64urlDecode(c.id)}));
+    }
+
+    const cred = await navigator.credentials.create({publicKey: opts});
+    const payload = {
+      id: cred.id,
+      rawId: b64url(cred.rawId),
+      type: cred.type,
+      response: {
+        clientDataJSON: b64url(cred.response.clientDataJSON),
+        attestationObject: b64url(cred.response.attestationObject),
+      }
+    };
+    const verRes = await fetch("{{ url_for('admin_webauthn_register_verify') }}", {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const ver = await verRes.json();
+    if (ver.verified) {
+      status.style.color = '#16a34a';
+      status.textContent = '✓ Biometric registered successfully! Reloading…';
+      setTimeout(() => window.location.reload(), 1200);
+    } else {
+      throw new Error(ver.error || 'Registration failed');
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Register Face / Fingerprint';
+    status.style.color = '#dc2626';
+    status.textContent = 'Error: ' + (e.message || 'Registration failed');
+  }
+}
+</script>
+{% endblock %}

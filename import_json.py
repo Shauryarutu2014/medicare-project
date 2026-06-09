@@ -1,7 +1,7 @@
 import json
 import psycopg2
 
-DATABASE_URL = "postgresql://medicare_user:d7gaTAaBVVS4c5bGmwvCilMnACC9r6tz@dpg-d85efkgjs32c73aftmbg-a.virginia-postgres.render.com/medicare_f2fm"
+DATABASE_URL = "postgresql://medicare_database_user:6ssEiOC01LoWdPrSnulD6Ko6vmHrWpaE@dpg-d8jq2kuk1jcs73e1rlk0-a.virginia-postgres.render.com/medicare_database"
 
 # connect database
 conn = psycopg2.connect(DATABASE_URL)

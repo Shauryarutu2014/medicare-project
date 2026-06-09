@@ -45,7 +45,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "medicare-dev-secret-key-2024")
 
 # ── Admin Panel SQLAlchemy DB (SQLite) ─────────────────────────────────────────
-app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql+psycopg2://medicare_user:d7gaTAaBVVS4c5bGmwvCilMnACC9r6tz@dpg-d85efkgjs32c73aftmbg-a.virginia-postgres.render.com/medicare_f2fm"
+app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql+psycopg2://medicare_database_user:6ssEiOC01LoWdPrSnulD6Ko6vmHrWpaE@dpg-d8jq2kuk1jcs73e1rlk0-a.virginia-postgres.render.com/medicare_database"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 admin_db = SQLAlchemy(app)
 

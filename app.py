@@ -3,6 +3,7 @@ import json
 import random
 import csv
 import io
+import secrets
 from functools import wraps
 from datetime import datetime, timedelta
 import psycopg2
@@ -43,6 +44,17 @@ except Exception:
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "medicare-dev-secret-key-2024")
+
+# ── Flask-Mail Configuration ───────────────────────────────────────────────────
+app.config["MAIL_SERVER"]   = "smtp.gmail.com"
+app.config["MAIL_PORT"]     = 587
+app.config["MAIL_USE_TLS"]  = True
+app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME", "medicareweb2026@gmail.com")
+app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD", "xpis ackf rmzy svgv ")
+app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_USERNAME", "medicareweb2026@gmail.com")
+
+from flask_mail import Mail, Message as MailMessage
+mail = Mail(app)
 
 # ── Admin Panel SQLAlchemy DB (SQLite) ─────────────────────────────────────────
 app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql+psycopg2://medicare_database_user:6ssEiOC01LoWdPrSnulD6Ko6vmHrWpaE@dpg-d8jq2kuk1jcs73e1rlk0-a.virginia-postgres.render.com/medicare_database"
@@ -266,19 +278,27 @@ ADMIN_DISPLAY = {
 # ══════════════════════════════════════════════════════════════════════════════
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "git "
+    "postgresql://medicare_user:d7gaTAaBVVS4c5bGmwvCilMnACC9r6tz@dpg-d85efkgjs32c73aftmbg-a.virginia-postgres.render.com/medicare_f2fm"
 )
 
 def get_db():
-    conn = psycopg2.connect(
-        host="dpg-d8jq2kuk1jcs73e1rlk0-a.oregon-postgres.render.com",
-        database="medicare_database",
-        user="medicare_database_user",
-        password="6ssEiOC01LoWdPrSnulD6Ko6vmHrWpaE",
-        port="5432",
-        sslmode="require"
-    )
+    conn = psycopg2.connect(DATABASE_URL)
     return conn
+
+
+def mask_email(email):
+    try:
+        local, domain = email.rsplit('@', 1)
+        if len(local) <= 2:
+            masked_local = local[0] + '***'
+        elif len(local) <= 4:
+            masked_local = local[0] + '***' + local[-1]
+        else:
+            visible = max(2, len(local) // 4)
+            masked_local = local[:visible] + '***' + local[-1]
+        return f"{masked_local}@{domain}"
+    except Exception:
+        return '***@***'
 
 def init_db():
     conn = get_db()
@@ -303,6 +323,55 @@ def init_db():
                 searched_at TIMESTAMP DEFAULT NOW()
             )
         """)
+    cur.execute("""
+            CREATE TABLE IF NOT EXISTS pending_registrations (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(100) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                password_hash TEXT NOT NULL,
+                token VARCHAR(128) UNIQUE NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+    cur.execute("""
+            CREATE TABLE IF NOT EXISTS password_reset_otps (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) NOT NULL,
+                otp VARCHAR(6) NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+    cur.execute("""
+            CREATE TABLE IF NOT EXISTS email_change_tokens (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                new_email VARCHAR(255) NOT NULL,
+                token VARCHAR(128) UNIQUE NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+    cur.execute("""
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                token VARCHAR(128) UNIQUE NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+    # Add profile columns to users if not present
+    for col_sql in [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(150)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS dob DATE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_color VARCHAR(20) DEFAULT '#2563eb'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT",
+    ]:
+        cur.execute(col_sql)
     conn.commit()
     cur.close()
     conn.close()
@@ -673,7 +742,6 @@ def index():
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
-
         username = request.form.get("username", "").strip()
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "")
@@ -681,57 +749,732 @@ def signup():
         captcha_answer = request.form.get("captcha_answer", "").strip()
         captcha_expected = session.get("captcha_answer")
 
-        # ---------------- VALIDATION ----------------
         if not username or not email or not password:
             flash("All fields are required.", "danger")
             return redirect(url_for("signup"))
-
         if password != confirm:
             flash("Passwords do not match.", "danger")
             return redirect(url_for("signup"))
-
         if len(password) < 6:
             flash("Password must be at least 6 characters.", "danger")
             return redirect(url_for("signup"))
-
         if not captcha_expected or captcha_answer != str(captcha_expected):
             flash("Incorrect CAPTCHA answer. Please try again.", "danger")
             return redirect(url_for("signup"))
 
-        # ---------------- HASH PASSWORD ----------------
         password_hash = generate_password_hash(password)
 
-        # ---------------- DATABASE INSERT ----------------
         conn = get_db()
         cur = conn.cursor()
-
         try:
+            cur.execute("SELECT id FROM users WHERE username=%s", (username,))
+            if cur.fetchone():
+                flash("Username already exists. Please choose a different username.", "danger")
+                return redirect(url_for("signup"))
+
+            cur.execute("DELETE FROM pending_registrations WHERE username=%s", (username,))
+
+            token = secrets.token_urlsafe(48)
+            expires = datetime.utcnow() + timedelta(hours=1)
             cur.execute(
-                "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
-                (username, email, password_hash)
+                "INSERT INTO pending_registrations (username, email, password_hash, token, expires_at) VALUES (%s,%s,%s,%s,%s)",
+                (username, email, password_hash, token, expires)
             )
             conn.commit()
 
-            flash("Account created successfully! Please sign in.", "success")
-            return redirect(url_for("signin"))
+            verify_url = url_for("verify_email", token=token, _external=True)
+            msg = MailMessage(
+                subject="Medicare — Verify Your Email",
+                recipients=[email]
+            )
+            msg.html = f"""
+            <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto;background:#f0f7ff;border-radius:16px;overflow:hidden;">
+              <div style="background:linear-gradient(135deg,#2563eb,#1d4ed8);padding:36px 32px;text-align:center;">
+                <h1 style="color:#fff;margin:0;font-size:28px;letter-spacing:-0.5px;">Medi<span style="color:#93c5fd;">Care</span></h1>
+                <p style="color:#bfdbfe;margin:8px 0 0;font-size:14px;">Your Trusted Health Partner</p>
+              </div>
+              <div style="padding:36px 32px;background:#fff;">
+                <h2 style="color:#1e3a8a;font-size:22px;margin:0 0 12px;">Verify your email address</h2>
+                <p style="color:#374151;font-size:15px;line-height:1.6;">Hi <strong>{username}</strong>, thanks for signing up! Click the button below to verify your email and activate your account.</p>
+                <div style="text-align:center;margin:32px 0;">
+                  <a href="{verify_url}" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;padding:14px 36px;border-radius:10px;font-size:16px;font-weight:600;display:inline-block;">Verify Now</a>
+                </div>
+                <p style="color:#6b7280;font-size:13px;text-align:center;">This link expires in <strong>1 hour</strong>. If you did not sign up, ignore this email.</p>
+              </div>
+              <div style="background:#f0f7ff;padding:16px 32px;text-align:center;">
+                <p style="color:#9ca3af;font-size:12px;margin:0;">&copy; 2025 Medicare. All rights reserved.</p>
+              </div>
+            </div>
+            """
+            mail.send(msg)
+            session['signup_pending_email'] = email
+            return redirect(url_for("signup_pending"))
 
         except Exception as e:
             conn.rollback()
-            print("❌ SIGNUP ERROR:", repr(e))   # IMPORTANT DEBUG LINE
-
-            flash("Username or email already exists or database error.", "danger")
+            print("❌ SIGNUP ERROR:", repr(e))
+            flash("An error occurred. Please try again.", "danger")
             return redirect(url_for("signup"))
-
         finally:
             cur.close()
             conn.close()
 
-    # ---------------- GET REQUEST (CAPTCHA) ----------------
     a, b = random.randint(1, 9), random.randint(1, 9)
     session["captcha_answer"] = a + b
     session["captcha_question"] = f"{a} + {b}"
-
     return render_template("signup.html", captcha=session["captcha_question"])
+
+
+@app.route("/signup/pending")
+def signup_pending():
+    return render_template("signup_pending.html")
+
+
+@app.route("/api/signup/status")
+def signup_status():
+    email = session.get("signup_pending_email")
+    if not email:
+        return jsonify({"status": "unknown"})
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM pending_registrations WHERE email=%s AND expires_at > NOW()", (email,))
+        if cur.fetchone():
+            return jsonify({"status": "pending"})
+        cur.execute("SELECT id FROM users WHERE LOWER(email)=%s", (email.lower(),))
+        if cur.fetchone():
+            session.pop("signup_pending_email", None)
+            return jsonify({"status": "verified"})
+        return jsonify({"status": "expired"})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/signup/resend", methods=["POST"])
+def signup_resend():
+    email = session.get("signup_pending_email")
+    if not email:
+        return jsonify({"ok": False, "error": "No pending registration found."})
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute("SELECT * FROM pending_registrations WHERE email=%s AND expires_at > NOW()", (email,))
+        pending = cur.fetchone()
+        if not pending:
+            return jsonify({"ok": False, "error": "Link expired. Please sign up again."})
+        token = secrets.token_urlsafe(48)
+        expires = datetime.utcnow() + timedelta(hours=1)
+        cur.execute("UPDATE pending_registrations SET token=%s, expires_at=%s WHERE email=%s", (token, expires, email))
+        conn.commit()
+        verify_url = url_for("verify_email", token=token, _external=True)
+        username = pending["username"]
+        msg = MailMessage(subject="Medicare — Verify Your Email", recipients=[email])
+        msg.html = f"""
+        <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto;background:#f0f7ff;border-radius:16px;overflow:hidden;">
+          <div style="background:linear-gradient(135deg,#2563eb,#1d4ed8);padding:36px 32px;text-align:center;">
+            <h1 style="color:#fff;margin:0;font-size:28px;letter-spacing:-0.5px;">Medi<span style="color:#93c5fd;">Care</span></h1>
+            <p style="color:#bfdbfe;margin:8px 0 0;font-size:14px;">Your Trusted Health Partner</p>
+          </div>
+          <div style="padding:36px 32px;background:#fff;">
+            <h2 style="color:#1e3a8a;font-size:22px;margin:0 0 12px;">Verify your email address</h2>
+            <p style="color:#374151;font-size:15px;line-height:1.6;">Hi <strong>{username}</strong>, here is your new verification link.</p>
+            <div style="text-align:center;margin:32px 0;">
+              <a href="{verify_url}" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;padding:14px 36px;border-radius:10px;font-size:16px;font-weight:600;display:inline-block;">Verify Now</a>
+            </div>
+            <p style="color:#6b7280;font-size:13px;text-align:center;">This link expires in <strong>1 hour</strong>.</p>
+          </div>
+        </div>
+        """
+        mail.send(msg)
+        return jsonify({"ok": True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "error": str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/verify-email/<token>")
+def verify_email(token):
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute(
+            "SELECT * FROM pending_registrations WHERE token=%s AND expires_at > NOW()",
+            (token,)
+        )
+        pending = cur.fetchone()
+        if not pending:
+            cur.close()
+            conn.close()
+            return render_template("verify_result.html", success=False,
+                                   message="This verification link is invalid or has expired. Please sign up again.")
+
+        cur.execute(
+            "INSERT INTO users (username, email, password_hash) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
+            (pending["username"], pending["email"], pending["password_hash"])
+        )
+        cur.execute("DELETE FROM pending_registrations WHERE token=%s", (token,))
+        conn.commit()
+        return render_template("verify_result.html", success=True,
+                               message="Your email has been verified! Your account is now active.")
+    except Exception as e:
+        conn.rollback()
+        print("❌ VERIFY EMAIL ERROR:", repr(e))
+        return render_template("verify_result.html", success=False,
+                               message="Something went wrong. Please try signing up again.")
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        if not username:
+            flash("Please enter your username.", "danger")
+            return redirect(url_for("forgot_password"))
+
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        try:
+            cur.execute("SELECT id, email, username FROM users WHERE username=%s", (username,))
+            user = cur.fetchone()
+            if not user:
+                flash("No account found with that username.", "danger")
+                return redirect(url_for("forgot_password"))
+
+            email = user["email"]
+            masked = mask_email(email)
+
+            cur.execute("DELETE FROM password_reset_tokens WHERE user_id=%s", (user["id"],))
+            token = secrets.token_urlsafe(48)
+            expires = datetime.utcnow() + timedelta(hours=1)
+            cur.execute(
+                "INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (%s,%s,%s)",
+                (user["id"], token, expires)
+            )
+            conn.commit()
+
+            reset_url = url_for("reset_password_token", token=token, _external=True)
+            msg = MailMessage(subject="Medicare — Reset Your Password", recipients=[email])
+            msg.html = f"""
+            <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto;background:#f0f7ff;border-radius:16px;overflow:hidden;">
+              <div style="background:linear-gradient(135deg,#2563eb,#1d4ed8);padding:36px 32px;text-align:center;">
+                <h1 style="color:#fff;margin:0;font-size:28px;letter-spacing:-0.5px;">Medi<span style="color:#93c5fd;">Care</span></h1>
+                <p style="color:#bfdbfe;margin:8px 0 0;font-size:14px;">Your Trusted Health Partner</p>
+              </div>
+              <div style="padding:36px 32px;background:#fff;">
+                <h2 style="color:#1e3a8a;font-size:22px;margin:0 0 12px;">Reset Your Password</h2>
+                <p style="color:#374151;font-size:15px;line-height:1.6;">Hi <strong>{user['username']}</strong>, click the button below to reset your password. This link expires in <strong>1 hour</strong>.</p>
+                <div style="text-align:center;margin:32px 0;">
+                  <a href="{reset_url}" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;padding:14px 36px;border-radius:10px;font-size:16px;font-weight:600;display:inline-block;">Reset Password</a>
+                </div>
+                <p style="color:#6b7280;font-size:13px;text-align:center;">If you did not request this, ignore this email — your password will remain unchanged.</p>
+              </div>
+              <div style="background:#f0f7ff;padding:16px 32px;text-align:center;">
+                <p style="color:#9ca3af;font-size:12px;margin:0;">&copy; 2025 Medicare. All rights reserved.</p>
+              </div>
+            </div>
+            """
+            mail.send(msg)
+            session["pwd_reset_token"] = token
+            session["pwd_reset_masked"] = masked
+            return redirect(url_for("forgot_password_pending"))
+
+        except Exception as e:
+            conn.rollback()
+            print("❌ FORGOT PASSWORD ERROR:", repr(e))
+            flash("An error occurred. Please try again.", "danger")
+            return redirect(url_for("forgot_password"))
+        finally:
+            cur.close()
+            conn.close()
+
+    return render_template("forgot_password.html")
+
+
+@app.route("/forgot-password/pending")
+def forgot_password_pending():
+    masked = session.get("pwd_reset_masked")
+    if not masked:
+        return redirect(url_for("forgot_password"))
+    return render_template("forgot_password_pending.html", masked_email=masked)
+
+
+@app.route("/api/password-reset/status")
+def password_reset_status():
+    token = session.get("pwd_reset_token")
+    if not token:
+        return jsonify({"status": "unknown"})
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute("SELECT used, expires_at FROM password_reset_tokens WHERE token=%s", (token,))
+        record = cur.fetchone()
+        if not record:
+            return jsonify({"status": "expired"})
+        if record["used"]:
+            session.pop("pwd_reset_token", None)
+            session.pop("pwd_reset_masked", None)
+            return jsonify({"status": "verified"})
+        if record["expires_at"] < datetime.utcnow():
+            return jsonify({"status": "expired"})
+        return jsonify({"status": "pending"})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/forgot-password/resend", methods=["POST"])
+def forgot_password_resend():
+    token = session.get("pwd_reset_token")
+    if not token:
+        return jsonify({"ok": False, "error": "No pending reset found."})
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute(
+            "SELECT prt.user_id, u.email, u.username FROM password_reset_tokens prt "
+            "JOIN users u ON u.id=prt.user_id WHERE prt.token=%s AND prt.used=FALSE",
+            (token,)
+        )
+        record = cur.fetchone()
+        if not record:
+            return jsonify({"ok": False, "error": "Link expired. Please start again."})
+        new_token = secrets.token_urlsafe(48)
+        expires = datetime.utcnow() + timedelta(hours=1)
+        cur.execute(
+            "UPDATE password_reset_tokens SET token=%s, expires_at=%s WHERE token=%s",
+            (new_token, expires, token)
+        )
+        conn.commit()
+        session["pwd_reset_token"] = new_token
+        reset_url = url_for("reset_password_token", token=new_token, _external=True)
+        msg = MailMessage(subject="Medicare — Reset Your Password", recipients=[record["email"]])
+        msg.html = f"""
+        <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto;background:#f0f7ff;border-radius:16px;overflow:hidden;">
+          <div style="background:linear-gradient(135deg,#2563eb,#1d4ed8);padding:36px 32px;text-align:center;">
+            <h1 style="color:#fff;margin:0;font-size:28px;letter-spacing:-0.5px;">Medi<span style="color:#93c5fd;">Care</span></h1>
+          </div>
+          <div style="padding:36px 32px;background:#fff;">
+            <h2 style="color:#1e3a8a;font-size:22px;margin:0 0 12px;">Reset Your Password</h2>
+            <p style="color:#374151;font-size:15px;line-height:1.6;">Hi <strong>{record['username']}</strong>, here is your new reset link.</p>
+            <div style="text-align:center;margin:32px 0;">
+              <a href="{reset_url}" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;padding:14px 36px;border-radius:10px;font-size:16px;font-weight:600;display:inline-block;">Reset Password</a>
+            </div>
+            <p style="color:#6b7280;font-size:13px;text-align:center;">Expires in <strong>1 hour</strong>.</p>
+          </div>
+        </div>
+        """
+        mail.send(msg)
+        return jsonify({"ok": True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "error": str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password_token(token):
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute(
+            "SELECT * FROM password_reset_tokens WHERE token=%s AND used=FALSE AND expires_at > NOW()",
+            (token,)
+        )
+        record = cur.fetchone()
+        if not record:
+            cur.close(); conn.close()
+            flash("This reset link is invalid or has expired. Please request a new one.", "danger")
+            return redirect(url_for("forgot_password"))
+
+        if request.method == "POST":
+            password = request.form.get("password", "")
+            confirm  = request.form.get("confirm_password", "")
+            if not password or not confirm:
+                flash("Both fields are required.", "danger")
+                return redirect(url_for("reset_password_token", token=token))
+            if password != confirm:
+                flash("Passwords do not match.", "danger")
+                return redirect(url_for("reset_password_token", token=token))
+            if len(password) < 6:
+                flash("Password must be at least 6 characters.", "danger")
+                return redirect(url_for("reset_password_token", token=token))
+
+            new_hash = generate_password_hash(password)
+            cur.execute("UPDATE users SET password_hash=%s WHERE id=%s", (new_hash, record["user_id"]))
+            cur.execute("UPDATE password_reset_tokens SET used=TRUE WHERE token=%s", (token,))
+            conn.commit()
+            cur.close(); conn.close()
+            flash("Password reset successfully! Please sign in with your new password.", "success")
+            return redirect(url_for("signin"))
+
+        cur.close(); conn.close()
+        return render_template("reset_password_token.html", token=token)
+
+    except Exception as e:
+        conn.rollback()
+        print("❌ RESET PASSWORD TOKEN ERROR:", repr(e))
+        cur.close(); conn.close()
+        flash("An error occurred. Please try again.", "danger")
+        return redirect(url_for("forgot_password"))
+
+
+@app.route("/reset-password/otp", methods=["GET", "POST"])
+def reset_otp():
+    email = session.get("reset_email")
+    if not email:
+        flash("Please start the password reset process again.", "warning")
+        return redirect(url_for("forgot_password"))
+
+    if request.method == "POST":
+        entered_otp = request.form.get("otp", "").strip()
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        try:
+            cur.execute(
+                "SELECT * FROM password_reset_otps WHERE email=%s AND otp=%s AND expires_at > NOW() AND used=FALSE",
+                (email, entered_otp)
+            )
+            record = cur.fetchone()
+            if not record:
+                flash("Invalid or expired OTP. Please try again.", "danger")
+                return redirect(url_for("reset_otp"))
+
+            cur.execute("UPDATE password_reset_otps SET used=TRUE WHERE id=%s", (record["id"],))
+            conn.commit()
+            session["otp_verified_email"] = email
+            session.pop("reset_email", None)
+            return redirect(url_for("reset_new_password"))
+        except Exception as e:
+            conn.rollback()
+            print("❌ OTP ERROR:", repr(e))
+            flash("An error occurred. Please try again.", "danger")
+            return redirect(url_for("reset_otp"))
+        finally:
+            cur.close()
+            conn.close()
+
+    return render_template("reset_otp.html", email=email)
+
+
+@app.route("/reset-password/new", methods=["GET", "POST"])
+def reset_new_password():
+    email = session.get("otp_verified_email")
+    if not email:
+        flash("Please start the password reset process again.", "warning")
+        return redirect(url_for("forgot_password"))
+
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        if not password or not confirm:
+            flash("Both fields are required.", "danger")
+            return redirect(url_for("reset_new_password"))
+        if password != confirm:
+            flash("Passwords do not match.", "danger")
+            return redirect(url_for("reset_new_password"))
+        if len(password) < 6:
+            flash("Password must be at least 6 characters.", "danger")
+            return redirect(url_for("reset_new_password"))
+
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            new_hash = generate_password_hash(password)
+            cur.execute("UPDATE users SET password_hash=%s WHERE LOWER(email)=%s", (new_hash, email.lower()))
+            conn.commit()
+            session.pop("otp_verified_email", None)
+            flash("Password reset successfully! Please sign in with your new password.", "success")
+            return redirect(url_for("signin"))
+        except Exception as e:
+            conn.rollback()
+            print("❌ RESET PASSWORD ERROR:", repr(e))
+            flash("An error occurred. Please try again.", "danger")
+            return redirect(url_for("reset_new_password"))
+        finally:
+            cur.close()
+            conn.close()
+
+    return render_template("reset_new_password.html")
+
+
+# ─── Profile Routes ─────────────────────────────────────────────────────────────
+
+def get_user_profile(user_id):
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT * FROM users WHERE id=%s", (user_id,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+    return user
+
+
+@app.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    user = get_user_profile(session["user_id"])
+    if request.method == "POST":
+        display_name = request.form.get("display_name", "").strip()[:150]
+        dob_raw      = request.form.get("dob", "").strip()
+        avatar_color = request.form.get("avatar_color", "#2563eb").strip()
+        bio          = request.form.get("bio", "").strip()[:300]
+
+        dob = None
+        if dob_raw:
+            try:
+                dob = datetime.strptime(dob_raw, "%Y-%m-%d").date()
+            except ValueError:
+                flash("Invalid date of birth.", "danger")
+                return redirect(url_for("profile"))
+
+        allowed_colors = ["#2563eb","#7c3aed","#0891b2","#059669","#dc2626","#ea580c","#d97706","#db2777"]
+        if avatar_color not in allowed_colors:
+            avatar_color = "#2563eb"
+
+        conn = get_db()
+        cur  = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE users SET display_name=%s, dob=%s, avatar_color=%s, bio=%s WHERE id=%s",
+                (display_name or None, dob, avatar_color, bio or None, session["user_id"])
+            )
+            conn.commit()
+            flash("Profile updated successfully!", "success")
+        except Exception as e:
+            conn.rollback()
+            print("❌ PROFILE UPDATE ERROR:", repr(e))
+            flash("An error occurred. Please try again.", "danger")
+        finally:
+            cur.close()
+            conn.close()
+        return redirect(url_for("profile"))
+
+    return render_template("profile.html", user=user)
+
+
+@app.route("/profile/email-preferences", methods=["GET", "POST"])
+@login_required
+def email_preferences():
+    if request.method == "POST":
+        new_email = request.form.get("new_email", "").strip().lower()
+        if not new_email:
+            flash("Please enter a new email address.", "danger")
+            return redirect(url_for("email_preferences"))
+
+        current_user = get_user_profile(session["user_id"])
+        if new_email == current_user["email"].lower():
+            flash("That is already your current email address.", "warning")
+            return redirect(url_for("email_preferences"))
+
+        conn = get_db()
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        try:
+            cur.execute("DELETE FROM email_change_tokens WHERE user_id=%s", (session["user_id"],))
+            token   = secrets.token_urlsafe(48)
+            expires = datetime.utcnow() + timedelta(hours=1)
+            cur.execute(
+                "INSERT INTO email_change_tokens (user_id, new_email, token, expires_at) VALUES (%s,%s,%s,%s)",
+                (session["user_id"], new_email, token, expires)
+            )
+            conn.commit()
+
+            verify_url = url_for("confirm_email_change", token=token, _external=True)
+            username   = session["username"]
+            msg = MailMessage(subject="Medicare — Confirm Your New Email", recipients=[new_email])
+            msg.html = f"""
+            <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto;background:#f0f7ff;border-radius:16px;overflow:hidden;">
+              <div style="background:linear-gradient(135deg,#2563eb,#1d4ed8);padding:36px 32px;text-align:center;">
+                <h1 style="color:#fff;margin:0;font-size:28px;letter-spacing:-0.5px;">Medi<span style="color:#93c5fd;">Care</span></h1>
+                <p style="color:#bfdbfe;margin:8px 0 0;font-size:14px;">Your Trusted Health Partner</p>
+              </div>
+              <div style="padding:36px 32px;background:#fff;">
+                <h2 style="color:#1e3a8a;font-size:22px;margin:0 0 12px;">Confirm your new email</h2>
+                <p style="color:#374151;font-size:15px;line-height:1.6;">Hi <strong>{username}</strong>, click the button below to confirm <strong>{new_email}</strong> as your new email address.</p>
+                <div style="text-align:center;margin:32px 0;">
+                  <a href="{verify_url}" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;padding:14px 36px;border-radius:10px;font-size:16px;font-weight:600;display:inline-block;">Verify Now</a>
+                </div>
+                <p style="color:#6b7280;font-size:13px;text-align:center;">This link expires in <strong>1 hour</strong>. If you did not request this, ignore this email.</p>
+              </div>
+              <div style="background:#f0f7ff;padding:16px 32px;text-align:center;">
+                <p style="color:#9ca3af;font-size:12px;margin:0;">&copy; 2025 Medicare. All rights reserved.</p>
+              </div>
+            </div>
+            """
+            mail.send(msg)
+            session['email_change_pending'] = new_email
+            return redirect(url_for("email_change_pending_page"))
+
+        except Exception as e:
+            conn.rollback()
+            print("❌ EMAIL CHANGE ERROR:", repr(e))
+            flash("An error occurred. Please try again.", "danger")
+            return redirect(url_for("email_preferences"))
+        finally:
+            cur.close()
+            conn.close()
+
+    user = get_user_profile(session["user_id"])
+    return render_template("email_preferences.html", user=user)
+
+
+@app.route("/profile/email-change/<token>")
+def confirm_email_change(token):
+    conn = get_db()
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute(
+            "SELECT * FROM email_change_tokens WHERE token=%s AND expires_at > NOW()",
+            (token,)
+        )
+        record = cur.fetchone()
+        if not record:
+            cur.close(); conn.close()
+            return render_template("email_change_result.html", success=False,
+                                   message="This link is invalid or has expired. Please request a new one from Email Preferences.")
+
+        cur.execute("UPDATE users SET email=%s WHERE id=%s", (record["new_email"], record["user_id"]))
+        cur.execute("DELETE FROM email_change_tokens WHERE id=%s", (record["id"],))
+        conn.commit()
+        return render_template("email_change_result.html", success=True,
+                               message=f"Your email has been updated to {record['new_email']}!")
+    except Exception as e:
+        conn.rollback()
+        print("❌ CONFIRM EMAIL CHANGE ERROR:", repr(e))
+        return render_template("email_change_result.html", success=False,
+                               message="Something went wrong. Please try again from Email Preferences.")
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/profile/email-change-pending")
+@login_required
+def email_change_pending_page():
+    pending_email = session.get("email_change_pending")
+    if not pending_email:
+        return redirect(url_for("email_preferences"))
+    user = get_user_profile(session["user_id"])
+    return render_template("email_change_pending.html", pending_email=pending_email, user=user)
+
+
+@app.route("/api/email-change/status")
+@login_required
+def email_change_status():
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute(
+            "SELECT new_email FROM email_change_tokens WHERE user_id=%s AND expires_at > NOW()",
+            (session["user_id"],)
+        )
+        if cur.fetchone():
+            return jsonify({"status": "pending"})
+        pending_email = session.get("email_change_pending")
+        if pending_email:
+            cur.execute("SELECT id FROM users WHERE id=%s AND LOWER(email)=%s", (session["user_id"], pending_email.lower()))
+            if cur.fetchone():
+                session.pop("email_change_pending", None)
+                return jsonify({"status": "verified"})
+        return jsonify({"status": "expired"})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/profile/email-change/resend", methods=["POST"])
+@login_required
+def email_change_resend():
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute("SELECT * FROM email_change_tokens WHERE user_id=%s", (session["user_id"],))
+        record = cur.fetchone()
+        if not record:
+            return jsonify({"ok": False, "error": "No pending email change found."})
+        token = secrets.token_urlsafe(48)
+        expires = datetime.utcnow() + timedelta(hours=1)
+        cur.execute(
+            "UPDATE email_change_tokens SET token=%s, expires_at=%s WHERE user_id=%s",
+            (token, expires, session["user_id"])
+        )
+        conn.commit()
+        verify_url = url_for("confirm_email_change", token=token, _external=True)
+        username = session.get("username", "")
+        new_email = record["new_email"]
+        msg = MailMessage(subject="Medicare — Confirm Your New Email", recipients=[new_email])
+        msg.html = f"""
+        <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto;background:#f0f7ff;border-radius:16px;overflow:hidden;">
+          <div style="background:linear-gradient(135deg,#2563eb,#1d4ed8);padding:36px 32px;text-align:center;">
+            <h1 style="color:#fff;margin:0;font-size:28px;letter-spacing:-0.5px;">Medi<span style="color:#93c5fd;">Care</span></h1>
+            <p style="color:#bfdbfe;margin:8px 0 0;font-size:14px;">Your Trusted Health Partner</p>
+          </div>
+          <div style="padding:36px 32px;background:#fff;">
+            <h2 style="color:#1e3a8a;font-size:22px;margin:0 0 12px;">Confirm your new email</h2>
+            <p style="color:#374151;font-size:15px;line-height:1.6;">Hi <strong>{username}</strong>, here is your new confirmation link for <strong>{new_email}</strong>.</p>
+            <div style="text-align:center;margin:32px 0;">
+              <a href="{verify_url}" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;padding:14px 36px;border-radius:10px;font-size:16px;font-weight:600;display:inline-block;">Verify Now</a>
+            </div>
+            <p style="color:#6b7280;font-size:13px;text-align:center;">This link expires in <strong>1 hour</strong>.</p>
+          </div>
+        </div>
+        """
+        mail.send(msg)
+        return jsonify({"ok": True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "error": str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/profile/delete", methods=["GET", "POST"])
+@login_required
+def delete_account():
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm  = request.form.get("confirm", "")
+
+        if confirm != "DELETE":
+            flash("Please type DELETE to confirm account deletion.", "danger")
+            return redirect(url_for("delete_account"))
+
+        user = get_user_profile(session["user_id"])
+        if not user or not check_password_hash(user["password_hash"], password):
+            flash("Incorrect password. Account not deleted.", "danger")
+            return redirect(url_for("delete_account"))
+
+        conn = get_db()
+        cur  = conn.cursor()
+        try:
+            uid = session["user_id"]
+            cur.execute("DELETE FROM history WHERE user_id=%s", (uid,))
+            cur.execute("DELETE FROM email_change_tokens WHERE user_id=%s", (uid,))
+            cur.execute("DELETE FROM users WHERE id=%s", (uid,))
+            conn.commit()
+            session.clear()
+            flash("Your account has been permanently deleted.", "info")
+            return redirect(url_for("index"))
+        except Exception as e:
+            conn.rollback()
+            print("❌ DELETE ACCOUNT ERROR:", repr(e))
+            flash("An error occurred. Please try again.", "danger")
+            return redirect(url_for("delete_account"))
+        finally:
+            cur.close()
+            conn.close()
+
+    return render_template("delete_account.html")
+
 
 @app.route("/signin", methods=["GET", "POST"])
 def signin():

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email Verification — Medicare</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <style>
+    body { display:flex; align-items:center; justify-content:center; min-height:100vh; background:linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%); margin:0; }
+    .verify-card { background:#fff; border-radius:20px; box-shadow:0 20px 60px rgba(0,0,0,0.12); padding:56px 48px; max-width:460px; width:90%; text-align:center; }
+    .verify-icon-big { font-size:72px; margin-bottom:20px; display:block; }
+    .verify-card h1 { font-size:26px; font-weight:800; margin:0 0 12px; }
+    .verify-card p { color:#6b7280; font-size:15px; line-height:1.7; margin:0 0 28px; }
+    .btn-verify { display:inline-block; background:linear-gradient(135deg,#2563eb,#1d4ed8); color:#fff; text-decoration:none; padding:14px 40px; border-radius:10px; font-size:15px; font-weight:600; margin-top:8px; }
+    .success-color { color:#1d4ed8; }
+    .error-color { color:#dc2626; }
+  </style>
+</head>
+<body>
+  <div class="verify-card">
+    {% if success %}
+      <span class="verify-icon-big">✅</span>
+      <h1 class="success-color">Email Verified!</h1>
+      <p>{{ message }}</p>
+      <a href="{{ url_for('signin') }}" class="btn-verify">Sign In Now</a>
+    {% else %}
+      <span class="verify-icon-big">❌</span>
+      <h1 class="error-color">Verification Failed</h1>
+      <p>{{ message }}</p>
+      <a href="{{ url_for('signup') }}" class="btn-verify">Sign Up Again</a>
+    {% endif %}
+    <p style="margin-top:24px;font-size:13px;color:#9ca3af;">
+      <a href="{{ url_for('index') }}" style="color:#2563eb;text-decoration:none;">← Back to Medicare</a>
+    </p>
+  </div>
+  <script>
+    if ({{ 'true' if success else 'false' }}) {
+      setTimeout(function() { window.close(); }, 4000);
+    }
+  </script>
+</body>
+</html>

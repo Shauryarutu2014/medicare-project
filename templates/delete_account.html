@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Delete Account — Medicare{% endblock %}
+
+{% block content %}
+<section class="profile-section">
+  <div class="profile-container" style="justify-content:center;">
+    <div class="profile-main" style="max-width:560px;width:100%;">
+      <div class="profile-card danger-card">
+        <div class="profile-card-header danger-header">
+          <span style="font-size:48px;display:block;margin-bottom:12px;">⚠️</span>
+          <h2>Delete Account</h2>
+          <p>This action is permanent and cannot be undone.</p>
+        </div>
+
+        <div class="danger-warning-box">
+          <p><strong>Deleting your account will permanently remove:</strong></p>
+          <ul>
+            <li>Your profile information</li>
+            <li>Your complete medicine search history</li>
+            <li>All account settings and preferences</li>
+          </ul>
+        </div>
+
+        <form action="{{ url_for('delete_account') }}" method="POST" class="profile-form" id="deleteForm">
+          <div class="form-group">
+            <label for="password">Current Password</label>
+            <div class="input-wrapper">
+              <span class="input-icon">🔒</span>
+              <input type="password" id="password" name="password"
+                placeholder="Enter your current password" required autocomplete="current-password" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="confirm">Type <strong>DELETE</strong> to confirm</label>
+            <div class="input-wrapper">
+              <span class="input-icon">⚠️</span>
+              <input type="text" id="confirm" name="confirm"
+                placeholder="Type DELETE in capital letters" required autocomplete="off" />
+            </div>
+          </div>
+
+          <div class="profile-form-actions">
+            <button type="submit" class="btn btn-danger" id="deleteBtn" disabled>Delete My Account</button>
+            <a href="{{ url_for('profile') }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const confirmInput = document.getElementById('confirm');
+  const deleteBtn    = document.getElementById('deleteBtn');
+  confirmInput.addEventListener('input', function() {
+    deleteBtn.disabled = this.value !== 'DELETE';
+  });
+</script>
+{% endblock %}

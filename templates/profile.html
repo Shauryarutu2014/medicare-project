@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}My Profile — Medicare{% endblock %}
+
+{% block content %}
+<section class="profile-section">
+  <div class="profile-container">
+
+    <!-- Sidebar -->
+    <aside class="profile-sidebar">
+      <div class="profile-avatar-big" style="background:{{ user.avatar_color or '#2563eb' }}">
+        {{ (user.display_name or user.username)[0].upper() }}
+      </div>
+      <h2 class="profile-sidebar-name">{{ user.display_name or user.username }}</h2>
+      <p class="profile-sidebar-username">@{{ user.username }}</p>
+      {% if user.bio %}
+        <p class="profile-sidebar-bio">{{ user.bio }}</p>
+      {% endif %}
+      <div class="profile-sidebar-meta">
+        <span>📧 {{ user.email }}</span>
+        {% if user.dob %}
+          <span>🎂 {{ user.dob.strftime('%d %b %Y') }}</span>
+        {% endif %}
+        <span>📅 Joined {{ user.created_at.strftime('%b %Y') if user.created_at else '—' }}</span>
+      </div>
+      <div class="profile-sidebar-links">
+        <a href="{{ url_for('profile') }}" class="profile-nav-link active">✏️ Edit Profile</a>
+        <a href="{{ url_for('email_preferences') }}" class="profile-nav-link">✉️ Email Preferences</a>
+        <a href="{{ url_for('delete_account') }}" class="profile-nav-link danger-link">🗑️ Delete Account</a>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="profile-main">
+      <div class="profile-card">
+        <div class="profile-card-header">
+          <h2>Edit Profile</h2>
+          <p>Update your personal information and avatar</p>
+        </div>
+
+        <form action="{{ url_for('profile') }}" method="POST" class="profile-form">
+
+          <!-- Avatar Color Picker -->
+          <div class="form-section">
+            <h3 class="form-section-title">Avatar Color</h3>
+            <div class="avatar-color-picker">
+              {% for color in ['#2563eb','#7c3aed','#0891b2','#059669','#dc2626','#ea580c','#d97706','#db2777'] %}
+              <label class="color-swatch-label">
+                <input type="radio" name="avatar_color" value="{{ color }}"
+                  {% if (user.avatar_color or '#2563eb') == color %}checked{% endif %} />
+                <span class="color-swatch" style="background:{{ color }}">
+                  {% if (user.avatar_color or '#2563eb') == color %}
+                    <span class="color-check">✓</span>
+                  {% endif %}
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            <p class="form-hint">This color will be used for your profile avatar.</p>
+          </div>
+
+          <!-- Personal Info -->
+          <div class="form-section">
+            <h3 class="form-section-title">Personal Information</h3>
+            <div class="profile-form-grid">
+              <div class="form-group">
+                <label for="display_name">Display Name</label>
+                <div class="input-wrapper">
+                  <span class="input-icon">👤</span>
+                  <input type="text" id="display_name" name="display_name"
+                    placeholder="Your full name"
+                    value="{{ user.display_name or '' }}" maxlength="150" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="dob">Date of Birth</label>
+                <div class="input-wrapper">
+                  <span class="input-icon">🎂</span>
+                  <input type="date" id="dob" name="dob"
+                    value="{{ user.dob.strftime('%Y-%m-%d') if user.dob else '' }}" />
+                </div>
+              </div>
+            </div>
+            <div class="form-group" style="margin-top:16px;">
+              <label for="bio">Bio <span class="form-hint-inline">(max 300 characters)</span></label>
+              <textarea id="bio" name="bio" rows="3"
+                placeholder="A short description about yourself…"
+                maxlength="300" class="profile-textarea">{{ user.bio or '' }}</textarea>
+              <div class="char-count"><span id="bioCount">{{ (user.bio or '')|length }}</span>/300</div>
+            </div>
+          </div>
+
+          <div class="profile-form-actions">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const bioArea  = document.getElementById('bio');
+  const bioCount = document.getElementById('bioCount');
+  if (bioArea) {
+    bioArea.addEventListener('input', () => bioCount.textContent = bioArea.value.length);
+  }
+
+  document.querySelectorAll('input[name="avatar_color"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+      document.querySelectorAll('.color-check').forEach(c => c.remove());
+      const swatch = this.nextElementSibling;
+      const check  = document.createElement('span');
+      check.className = 'color-check';
+      check.textContent = '✓';
+      swatch.appendChild(check);
+    });
+  });
+</script>
+{% endblock %}

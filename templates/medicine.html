@@ -1,6 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Medicine Suggestion — Medicare{% endblock %}
 
+{% block extra_scripts %}
+<script>
+  (function() {
+    var isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    var hasSearch = {{ 'true' if searched_problem else 'false' }};
+    if (isMobile && hasSearch) {
+      var list = document.querySelector('.condition-list');
+      if (list) list.style.display = 'none';
+      var result = document.querySelector('.result-card') ||
+                   document.querySelector('.no-result-card') ||
+                   document.querySelector('.placeholder-card');
+      if (result) {
+        setTimeout(function() { result.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
+      }
+    }
+  })();
+</script>
+{% endblock %}
+
 {% block content %}
 <section class="page-hero page-hero-blue">
   <div class="page-hero-container">

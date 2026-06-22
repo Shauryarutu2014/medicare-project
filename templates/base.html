@@ -33,10 +33,10 @@
         <li><a href="{{ url_for('yoga') }}"        class="nav-link {% if request.endpoint == 'yoga' %}active{% endif %}">Yoga</a></li>
         <li><a href="{{ url_for('medicine') }}"    class="nav-link {% if request.endpoint == 'medicine' %}active{% endif %}">Medicine</a></li>
         <li>
-          <span class="nav-user">
+          <a href="{{ url_for('profile') }}" class="nav-user nav-user-link">
             <span class="user-avatar">{{ session.username[0].upper() }}</span>
             {{ session.username }}
-          </span>
+          </a>
         </li>
         <li><a href="{{ url_for('logout') }}" class="nav-btn nav-btn-outline">Logout</a></li>
       {% else %}
